@@ -1,0 +1,60 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+In order to carry out motif analysis, we need a `BSgenome` library for Rnor6. Following the instructions from https://www.bioconductor.org/packages/release/bioc/vignettes/BSgenome/inst/doc/BSgenomeForge.pdf we can develop the library. <br>
+
+First, we need to obtain DNA sequence fasta files from Ensembl. The fasta files of each chromosome should be named as `chromosomeName.fa`. For example, `1.fa` for DNA sequence of chromosome 1. <br>
+Second, create a seed file like the following:
+```
+Package: BSgenome.Rnorvegicus.Ensembl.rn6
+Title: Full genome sequences for Rattus norvegicus (Ensembl archive Sept. 2020)
+Description: Full genome sequences for Rattus norvegicus as provided by Ensembl, Sept. 2020 version.
+Version: 0.0.1
+organism: Rattus norvegicus
+common_name: Rat
+provider: Ensembl
+provider_version: rn6
+release_date: Sept. 2020
+release_name: rnor6
+source_url: ftp://ftp.ensembl.org/pub/release-98/fasta/rattus_norvegicus/
+organism_biocview: Rattus_norvegicus
+BSgenomeObjname: Rnorvegicus
+seqnames: c(1:20, "X", "Y")
+seqs_srcdir: /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl
+```
+Third, build the package in R:
+```{r, eval = F}
+library(BSgenome)
+forgeBSgenomeDataPkg("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/")
+```
+Last, in command line, do the following:
+```{bash, eval = F}
+R CMD build /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
+R CMD check /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
+R CMD INSTALL /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
+```
+After this, the package `BSgenome.Rnorvegicus.Ensembl.rn6` will be ready to use.
+
+```{r}
+ssessionInfo()
+```

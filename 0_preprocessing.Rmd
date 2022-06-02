@@ -95,7 +95,7 @@ for (time in c("15.5", "19.5")) {
     #compute TSS enrichment score per cell
     MACS <- TSSEnrichment(object = MACS, fast = FALSE, tss.positions = tss.ranges)
 
-    save(MACS, file=paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
+    #save(MACS, file=paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
     
     print(MACS)
   }

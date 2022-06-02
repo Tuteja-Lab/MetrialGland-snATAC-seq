@@ -1,0 +1,115 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+  
+## GD15.5:
+```{r}
+library(Seurat)
+library(Signac)
+library(ggplot2)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+data <- RenameIdents(data, `0` = "Other cells", `1` = "Other cells",
+                     `2` = "Other cells", `3` = "Other cells", `4` = "Other cells",
+                     `5` = "Other cells", `6` = "Natural killer cells",
+                     `7` = "Macrophage cells", `8` = "Macrophage cells",
+                     `9` = "Natural killer cells", `10` = "Endothelial cells",
+                     `11` = "Macrophage cells", `12` = "Other cells",
+                     `13` = "Endothelial cells", `14` = "Smooth muscle cells",
+                     `15` = "Endothelial cells", `16` = "Other cells",
+                     `17` = "Smooth muscle cells", `18` = "Other cells",
+                     `19` = "Natural killer cells", `20` = "Other cells",
+                     `21` = "Other cells", `22` = "Other cells",
+                     `23` = "Invasive trophoblast cells", `24` = "Other cells",
+                     `25` = "Other cells", `26` = "Smooth muscle cells",
+                     `27` = "Other cells", `28` = "Other cells")
+Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells", "Smooth muscle cells",
+                                                "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
+rats.RNA <- data
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/GD15.5/15.5_1-2-3-merged.rda")
+rats <- gd15.5combined
+DefaultAssay(rats) <- "RNA"
+
+transfer.anchors <- FindTransferAnchors(reference = rats.RNA, query = rats, reduction = 'cca')
+predicted.labels <- TransferData(anchorset = transfer.anchors, refdata = Idents(rats.RNA), weight.reduction = rats[['lsi']], dims=2:20)
+
+rats <- AddMetaData(object = rats, metadata= predicted.labels)
+
+plot1 <- DimPlot(object = rats.RNA, cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD15.5 scRNA-seq')
+plot2 <- DimPlot(object=rats, group.by = 'predicted.id', cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD15.5 scATAC-seq')
+
+plot1 + plot2
+
+save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
+
+table(rats$predicted.id)
+```
+
+## GD19.5:
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+data <- data2
+data <- RenameIdents(data, `0` = "Other cells", `1` = "Macrophage cells",
+                     `2` = "Other cells", `3` = "Other cells", `4` = "Other cells",
+                     `5` = "Other cells", `6` = "Invasive trophoblast cells",
+                     `7` = "Macrophage cells", `8` = "Smooth muscle cells",
+                     `9` = "Natural killer cells", `10` = "Endothelial cells",
+                     `11` = "Macrophage cells", `12` = "Other cells",
+                     `13` = "Other cells", `14` = "Macrophage cells",
+                     `15` = "Other cells", `16` = "Other cells",
+                     `17` = "Macrophage cells", `18` = "Macrophage cells",
+                     `19` = "Other cells", `20` = "Endothelial cells",
+                     `21` = "Other cells", `22` = "Other cells",
+                     `23` = "Other cells", `24` = "Other cells",
+                     `25` = "Other cells", `26` = "Smooth muscle cells")
+Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells", "Smooth muscle cells",
+                                                "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
+rats.RNA <- data
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/GD19.5/19.5_4-5-6-merged.rda")
+rats <- gd19.5combined
+DefaultAssay(rats) <- "RNA" #same if we use MACS or RNA assay
+
+transfer.anchors <- FindTransferAnchors(reference = rats.RNA, query = rats, reduction = 'cca')
+predicted.labels <- TransferData(anchorset = transfer.anchors, refdata = Idents(rats.RNA), weight.reduction = rats[['lsi']], dims=2:10)
+
+rats <- AddMetaData(object = rats, metadata= predicted.labels)
+
+plot1 <- DimPlot(object = rats.RNA, cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD19.5 scRNA-seq')
+plot2 <- DimPlot(object=rats, group.by = 'predicted.id', cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD19.5 scATAC-seq')
+
+plot1 + plot2
+
+save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
+
+table(rats$predicted.id)
+```
+
+
+```{r}
+ssessionInfo()
+```

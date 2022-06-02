@@ -1,0 +1,353 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+We first set up the environment with necessary libraries and functions.
+```{r}
+library(Signac)
+library(Seurat)
+library(S4Vectors)
+library(GenomicRanges)
+library(patchwork)
+library(biomaRt)
+library(ggplot2)
+
+plotComparisonDf <- function(comparison_df, title){
+  ggplot(comparison_df, aes(value)) +
+    geom_histogram(bins = 70, aes(fill=method), color='black') +
+    theme_classic() +
+    scale_fill_manual(values=c("TF"="red", "log TF"="#d3d3d3")) +
+    xlab('value in matrix') +
+    facet_wrap(~method, scales='free') + ggtitle(title)
+}
+```
+## 1. GD 15.5:
+We first filter the low-quality cells, as determined in the previous step.
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_1.rda")
+gd15.5_1 <- gd15.5_1_MACS
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_2.rda")
+gd15.5_2 <- gd15.5_2_MACS
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_3.rda")
+gd15.5_3 <- gd15.5_3_MACS
+
+gd15.5_1 <- subset(x = gd15.5_1, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+gd15.5_2 <- subset(x = gd15.5_2, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+gd15.5_3 <- subset(x = gd15.5_3, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+```
+
+Our data shows a trend of skewness; therefore, we should use `method = 3` when running dimension reduction. Codes here were adapted from http://andrewjohnhill.com/blog/2019/05/06/dimensionality-reduction-for-scatac-data/
+```{r}
+counts <- gd15.5_1@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 15.5_1")
+
+counts <- gd15.5_2@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 15.5_2")
+
+
+counts <- gd15.5_3@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 15.5_3")
+```
+Next, we run TF-IDF with `method = 3`.
+```{r}
+#run TF-IDF
+gd15.5_1 <- RunTFIDF(gd15.5_1, assay = 'MACSpeaks', method = 3)
+gd15.5_1 <- FindTopFeatures(gd15.5_1, min.cutoff = 'q0')
+gd15.5_1 <- RunSVD(gd15.5_1, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+
+gd15.5_2 <- RunTFIDF(gd15.5_2, assay = 'MACSpeaks', method = 3)
+gd15.5_2 <- FindTopFeatures(gd15.5_2, min.cutoff = 'q0')
+gd15.5_2 <- RunSVD(gd15.5_2, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+
+gd15.5_3 <- RunTFIDF(gd15.5_3, assay = 'MACSpeaks', method = 3)
+gd15.5_3 <- FindTopFeatures(gd15.5_3, min.cutoff = 'q0')
+gd15.5_3 <- RunSVD(gd15.5_3, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+```
+We then look at the correlation between the LSI components and the sequencing depth, and the elbow plots, so that we can determine the number of components to keep for clustering.
+```{r}
+DepthCor(gd15.5_1, n=50) + ggtitle("gd 15.5_1")
+DepthCor(gd15.5_2, n=50) + ggtitle("gd 15.5_2")
+DepthCor(gd15.5_3, n=50) + ggtitle("gd 15.5_3")
+
+ElbowPlot(gd15.5_1, n=50, reduction="lsi") + ggtitle("gd 15.5_1")
+ElbowPlot(gd15.5_2, n=50, reduction="lsi") + ggtitle("gd 15.5_2")
+ElbowPlot(gd15.5_3, n=50, reduction="lsi") + ggtitle("gd 15.5_3")
+```
+From the plots, we will keep the first 20 components, then exclude component 1 because of its high correlation with sequencing depth.
+```{r}
+gd15.5_1 <- RunUMAP(object = gd15.5_1, reduction = 'lsi', dims = 2:20) #drop the 1st component, see DepthCor plot and elbow plot
+gd15.5_2 <- RunUMAP(object = gd15.5_2, reduction = 'lsi', dims = 2:20)
+gd15.5_3 <- RunUMAP(object = gd15.5_3, reduction = 'lsi', dims = 2:20)
+```
+In order to merge the replicates, we need to find common peaks across replicates. We obtain this set of peaks here.
+```{r}
+intersecting.regions_15.5_2_3 <- findOverlaps(query = gd15.5_2, subject = gd15.5_3)
+intersections.15.5_2 <- unique(queryHits(intersecting.regions_15.5_2_3))
+peaks.15.5_2_3 <-  sort(granges(gd15.5_2)[intersections.15.5_2])
+intersecting.regions_15.5_1_2_3 <- findOverlaps(query=gd15.5_1, subject=peaks.15.5_2_3)
+intersections.15.5_1 <- unique(queryHits(intersecting.regions_15.5_1_2_3))
+combined.peaks <- sort(granges(gd15.5_1)[intersections.15.5_1])
+```
+Next, we build a new Seurat object with the new peaks. It will require cell identities and fragment counts from each individual replicate.
+```{r}
+#load original cell identities
+md.15.5_1 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-1/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",", header = TRUE, row.names = 1)[-1, ]
+
+md.15.5_2 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-2/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",", header = TRUE, row.names = 1)[-1, ]
+
+md.15.5_3 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-3/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",", header = TRUE, row.names = 1)[-1, ]
+
+#load original fragment counts
+frags.15.5_1 <- CreateFragmentObject(path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-1/fragments.tsv.gz",
+  cells = rownames(md.15.5_1))
+
+frags.15.5_2 <- CreateFragmentObject(path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-2/fragments.tsv.gz",
+  cells = rownames(md.15.5_2))
+
+frags.15.5_3 <- CreateFragmentObject(path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/ATAC-15.5-3/fragments.tsv.gz",
+  cells = rownames(md.15.5_3))
+
+#count fragments in the common peaks among replicates
+gd15.5_1_peaks <- FeatureMatrix(fragments=frags.15.5_1, features=combined.peaks, cells=colnames(gd15.5_1))
+gd15.5_2_peaks <- FeatureMatrix(fragments=frags.15.5_2, features=combined.peaks, cells=colnames(gd15.5_2))
+gd15.5_3_peaks <- FeatureMatrix(fragments=frags.15.5_3, features=combined.peaks, cells=colnames(gd15.5_3))
+
+#build new assays to associate with the merged object
+gd15.5_1_assay <- CreateChromatinAssay(counts = gd15.5_1_peaks, min.cells = 1, ranges = combined.peaks)
+gd15.5_2_assay <- CreateChromatinAssay(counts = gd15.5_2_peaks, min.cells = 1, ranges = combined.peaks)
+gd15.5_3_assay <- CreateChromatinAssay(counts = gd15.5_3_peaks, min.cells = 1, ranges = combined.peaks)
+
+gd15.5_1[["combined"]] <- gd15.5_1_assay
+gd15.5_2[["combined"]] <- gd15.5_2_assay
+gd15.5_3[["combined"]] <- gd15.5_3_assay
+
+DefaultAssay(gd15.5_1) <- "combined"
+gd15.5_1 <- RunTFIDF(gd15.5_1, method=3)
+gd15.5_1$dataset <- 'gd15.5_1'
+
+DefaultAssay(gd15.5_2) <- "combined"
+gd15.5_2 <- RunTFIDF(gd15.5_2, method=3)
+gd15.5_2$dataset <- 'gd15.5_2'
+
+DefaultAssay(gd15.5_3) <- "combined"
+gd15.5_3 <- RunTFIDF(gd15.5_3, method=3)
+gd15.5_3$dataset <- 'gd15.5_3'
+
+#merge data
+gd15.5combined <- merge(x = gd15.5_1, y = list(gd15.5_2, gd15.5_3), add.cell.ids = c("15.5_1", "15.5_2", "15.5_3"))
+
+DefaultAssay(gd15.5combined) <- "combined"
+gd15.5combined <- RunTFIDF(gd15.5combined, method=3)
+gd15.5combined <- FindTopFeatures(gd15.5combined, min.cutoff = 'q0')
+gd15.5combined <- RunSVD(gd15.5combined)
+gd15.5combined <- RunUMAP(gd15.5combined, reduction = 'lsi', dims = 2:20)
+```
+With the new combined dataset, we need new fragment counts that are combined from the replicates. In BASH, carry out the following commands.
+```{bash, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5
+mkdir integratedFragments
+for i in {1..3}; do gzip -d ATAC-15.5-"$i"/fragments.tsv.gz; cp ATAC-15.5-"$i"/fragments.tsv integratedFragments/atac15.5_"$i"_fragments.tsv; c=`echo 15.5_"$i"_`; awk -v c=$c '{print $1"\t"$2"\t"$3"\t"c$4"\t"$5}' > temp; mv temp integratedFragments/atac15.5_"$i"_fragments.tsv; done
+cd integratedFragments
+sort -m -k 1,1V -k2,2n atac15.5_1_fragments.tsv atac15.5_2_fragments.tsv atac15.5_3_fragments.tsv > fragments.tsv
+bgzip -@ 4 fragments.tsv
+tabix --preset=bed fragments.tsv.gz
+```
+```{r}
+#build new Fragments() for the merge data
+frag.path <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD15.5/integratedFragments/fragments.tsv.gz"
+fragments <- CreateFragmentObject(path = frag.path, cells = colnames(gd15.5combined), validate.fragments = TRUE)
+Fragments(gd15.5combined) <- fragments
+
+#cluster on the new merge data
+gd15.5combined <- FindNeighbors(object = gd15.5combined, reduction = 'lsi', dims = 2:20)
+gd15.5combined <- FindClusters(object = gd15.5combined, algorithm = 3, resolution = 0.8, verbose = FALSE)
+
+save(gd15.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
+```
+
+## 2. GD 19.5:
+The analyses in this section is similar to those for gd 15.5 We first filter the low-quality cells.
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_4.rda")
+gd19.5_4 <- gd19.5_4_MACS
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_5.rda")
+gd19.5_5 <- gd19.5_5_MACS
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_6.rda")
+gd19.5_6 <- gd19.5_6_MACS
+
+gd19.5_4 <- subset(x = gd19.5_4, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+gd19.5_5 <- subset(x = gd19.5_5, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+gd19.5_6 <- subset(x = gd19.5_6, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
+```
+
+Our data shows a trend of skewness in the gd19.5 samples as well.
+```{r}
+counts <- gd19.5_4@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 19.5_4")
+
+counts <- gd19.5_5@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 19.5_5")
+
+
+counts <- gd19.5_6@assays$MACSpeaks@counts
+tf = t(t(counts) / Matrix::colSums(counts))
+comparison_df = rbind(data.frame(value=tf@x, method='TF'), data.frame(value=log1p(tf@x * 100000), method='log TF')) #100000 is scale factor, in Seurat it is default as 10000
+plotComparisonDf(comparison_df, "gd 19.5_6")
+```
+Next, we run TF-IDF with `method = 3`.
+```{r}
+#run TF-IDF
+gd19.5_4 <- RunTFIDF(gd19.5_4, assay = 'MACSpeaks', method = 3)
+gd19.5_4 <- FindTopFeatures(gd19.5_4, min.cutoff = 'q0')
+gd19.5_4 <- RunSVD(gd19.5_4, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+
+gd19.5_5 <- RunTFIDF(gd19.5_5, assay = 'MACSpeaks', method = 3)
+gd19.5_5 <- FindTopFeatures(gd19.5_5, min.cutoff = 'q0')
+gd19.5_5 <- RunSVD(gd19.5_5, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+
+gd19.5_6 <- RunTFIDF(gd19.5_6, assay = 'MACSpeaks', method = 3)
+gd19.5_6 <- FindTopFeatures(gd19.5_6, min.cutoff = 'q0')
+gd19.5_6 <- RunSVD(gd19.5_6, assay = 'MACSpeaks', reduction.key = 'LSI_', reduction.name = 'lsi')
+```
+We then look at the correlation between the LSI components and the sequencing depth, and the elbow plots, so that we can determine the number of components to keep for clustering.
+```{r}
+DepthCor(gd19.5_4, n=50) + ggtitle("gd 19.5_4")
+DepthCor(gd19.5_5, n=50) + ggtitle("gd 19.5_5")
+DepthCor(gd19.5_6, n=50) + ggtitle("gd 19.5_6")
+
+ElbowPlot(gd19.5_4, n=50, reduction="lsi") + ggtitle("gd 19.5_4")
+ElbowPlot(gd19.5_5, n=50, reduction="lsi") + ggtitle("gd 19.5_5")
+ElbowPlot(gd19.5_6, n=50, reduction="lsi") + ggtitle("gd 19.5_6")
+```
+From the plots, we will keep the first 10 components, then exclude component 1 because of its high correlation with sequencing depth.
+```{r}
+gd19.5_4 <- RunUMAP(object = gd19.5_4, reduction = 'lsi', dims = 2:10) #drop the 1st component, see DepthCor plot and elbow plot
+gd19.5_5 <- RunUMAP(object = gd19.5_5, reduction = 'lsi', dims = 2:10)
+gd19.5_6 <- RunUMAP(object = gd19.5_6, reduction = 'lsi', dims = 2:10)
+```
+In order to merge the replicates, we need to find common peaks across replicates. We obtain this set of peaks here.
+```{r}
+intersecting.regions_19.5_5_6 <- findOverlaps(query = gd19.5_5, subject = gd19.5_6)
+intersections.19.5_5 <- unique(queryHits(intersecting.regions_19.5_5_6))
+peaks.19.5_5_6 <-  sort(granges(gd19.5_5)[intersections.19.5_5])
+intersecting.regions_19.5_4_5_6 <- findOverlaps(query=gd19.5_4, subject=peaks.19.5_5_6)
+intersections.19.5_4 <- unique(queryHits(intersecting.regions_19.5_4_5_6))
+combined.peaks <- sort(granges(gd19.5_4)[intersections.19.5_4])
+```
+Next, we build a new Seurat object with the new peaks. It will require cell identities and fragment counts from each individual replicate.
+```{r}
+#load original cell identities
+md.19.5_4 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-4/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",", header = TRUE, row.names = 1)[-1, ]
+
+md.19.5_5 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-5/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",",  header = TRUE, row.names = 1)[-1, ]
+
+md.19.5_6 <- read.table(file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-6/singlecell.csv",
+  stringsAsFactors = FALSE, sep = ",",  header = TRUE,  row.names = 1)[-1, ]
+
+#load original fragment counts
+frags.19.5_4 <- CreateFragmentObject( path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-4/fragments.tsv.gz",
+  cells = rownames(md.19.5_4))
+
+frags.19.5_5 <- CreateFragmentObject(path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-5/fragments.tsv.gz",
+  cells = rownames(md.19.5_5))
+
+frags.19.5_6 <- CreateFragmentObject(path = "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/ATAC-19.5-6/fragments.tsv.gz",
+  cells = rownames(md.19.5_6))
+
+#count fragments in the common peaks among replicates
+gd19.5_4_peaks <- FeatureMatrix(fragments= frags.19.5_4, features=combined.peaks, cells=colnames(gd19.5_4))
+gd19.5_5_peaks <- FeatureMatrix(fragments= frags.19.5_5, features=combined.peaks, cells=colnames(gd19.5_5))
+gd19.5_6_peaks <- FeatureMatrix(fragments= frags.19.5_6, features=combined.peaks, cells=colnames(gd19.5_6))
+
+#build new assays to associate with the merged object
+gd19.5_4_assay <- CreateChromatinAssay(counts = gd19.5_4_peaks, min.cells = 1, ranges = combined.peaks)
+gd19.5_5_assay <- CreateChromatinAssay(counts = gd19.5_5_peaks, min.cells = 1, ranges = combined.peaks)
+gd19.5_6_assay <- CreateChromatinAssay(counts = gd19.5_6_peaks, min.cells = 1, ranges = combined.peaks)
+
+gd19.5_4[["combined"]] <- gd19.5_4_assay
+gd19.5_5[["combined"]] <- gd19.5_5_assay
+gd19.5_6[["combined"]] <- gd19.5_6_assay
+
+DefaultAssay(gd19.5_4) <- "combined"
+gd19.5_4 <- RunTFIDF(gd19.5_4, method=3)
+gd19.5_4$dataset <- 'gd19.5_4'
+
+DefaultAssay(gd19.5_5) <- "combined"
+gd19.5_5 <- RunTFIDF(gd19.5_5, method=3)
+gd19.5_5$dataset <- 'gd19.5_5'
+
+DefaultAssay(gd19.5_6) <- "combined"
+gd19.5_6 <- RunTFIDF(gd19.5_6, method=3)
+gd19.5_6$dataset <- 'gd19.5_6'
+
+#merge data
+gd19.5combined <- merge(x = gd19.5_4, y = list(gd19.5_5, gd19.5_6), add.cell.ids = c("19.5_4", "19.5_5", "19.5_6"))
+
+DefaultAssay(gd19.5combined) <- "combined"
+gd19.5combined <- RunTFIDF(gd19.5combined, method=3)
+gd19.5combined <- FindTopFeatures(gd19.5combined, min.cutoff = 'q0')
+gd19.5combined <- RunSVD(gd19.5combined)
+gd19.5combined <- RunUMAP(gd19.5combined, reduction = 'lsi', dims = 2:10)
+```
+
+```{r}
+#build new Fragments() for the merge data
+frag.path <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/GD19.5/integratedFragments/fragments.tsv.gz"
+fragments <- CreateFragmentObject(path = frag.path, cells = colnames(gd19.5combined), validate.fragments = TRUE)
+Fragments(gd19.5combined) <- fragments
+
+#cluster on the new merge data
+gd19.5combined <- FindNeighbors(object = gd19.5combined, reduction = 'lsi', dims = 2:20)
+gd19.5combined <- FindClusters(object = gd19.5combined, algorithm = 3, resolution = 0.8, verbose = FALSE)
+
+save(gd19.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
+```
+
+As a result, we have the following summary table of number of peaks and number of cell before and after filtering.
+```
+![Peak and cell number summary](Files/peakCellNo_preprocessMerge.png)
+```
+
+
+```{r}
+ssessionInfo()
+```
