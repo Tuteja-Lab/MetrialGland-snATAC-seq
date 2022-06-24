@@ -56,7 +56,7 @@ rn6Chr <- paste0(rn6Chr, rn6$V2, sep = "")
 ```
 
 Next, we call peaks using MACS (built in with `Signac`), and build a new Signac object for downstream analyses.
-```{r}
+```{r, eval=FALSE}
 dir <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/"
 dirsave <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/"
 for (time in c("15.5", "19.5")) {
@@ -95,9 +95,7 @@ for (time in c("15.5", "19.5")) {
     #compute TSS enrichment score per cell
     MACS <- TSSEnrichment(object = MACS, fast = FALSE, tss.positions = tss.ranges)
 
-    #save(MACS, file=paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
-    
-    print(MACS)
+    save(MACS, file=paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
   }
 }
 ```
@@ -106,11 +104,10 @@ Next, we build a preprocessing function.
 ```{r}
 processing <- function(data) {
   print("quantile(TSS.enrichment)")
-  quantile(data$TSS.enrichment)
-  data$high.tss <- ifelse(data$TSS.enrichment > 1.5, 'High', 'Low')
+  print(quantile(data@meta.data$TSS.enrichment))
   
   print("quantile(peak_region_fragments)")
-  quantile(data$peak_region_fragments)
+  print(quantile(data@meta.data$peak_region_fragments))
   
   print(VlnPlot(object = data, features = c('pct_reads_in_peaks', 'peak_region_fragments', 'TSS.enrichment', 'nucleosome_signal'), pt.size = 0.1, ncol = 4))
 }
@@ -120,28 +117,24 @@ We now use this `preprocessing` function to assess the quality of the data.
 ```{r}
 dir <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/"
 dirsave <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/"
-for (time in c("15.5", "19.5")) {
-  for (i in 1:3) {
-    load(paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
-    print(paste0("GD", time, "_", i))
-    processing(MACS)
-  }
-}
-```
-From the plots, we will keep cells that have `1000 < peak_region_fragments < 20000` (number of fragments in peaks between 1000 and 20000), `pct_reads_in_peaks > 15` (percentage of reads in peaks > 15\%), and `TSS.enrichment > 1.5` (enrichment ratio at transcription start sites > 1.5).
 
-```{r}
-dir <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/data/scATAC-seq/"
-dirsave <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/"
 for (time in c("15.5", "19.5")) {
-  for (i in 1:3) {
-    load(paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
-    print(paste0("GD", time, "_", i))
-    MACS <- subset(x = MACS, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
-    print(MACS)
+  if (time == "15.5") {
+      for (i in 1:3) {
+        load(paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
+        print(paste0("GD", time, "_", i))
+        processing(MACS)
+      }
+  } else {
+      for (i in 4:6) {
+        load(paste0(dirsave, "2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD", time, "_", i, ".rda"))
+        print(paste0("GD", time, "_", i))
+        processing(MACS)
+      }
   }
 }
 ```
+From the plots, we will keep cells that have `1000 < peak_region_fragments < 20000` (number of fragments in peaks between 1000 and 20000), `pct_reads_in_peaks > 15` (percentage of reads in peaks > 15\%), and `TSS.enrichment > 1.5` (enrichment ratio at transcription start sites > 1.5). <br>
 
 In conclusion, we have this summary table of objects before and after filtering:
 ```{r}

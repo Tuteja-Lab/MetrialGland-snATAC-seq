@@ -27,7 +27,17 @@ This is a documentation for analyses of scATAC-seq data, generated from rat metr
 library(Seurat)
 library(Signac)
 library(ggplot2)
+library(GenomicRanges)
 set.seed(1234)
+
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+colnames(rnor6)[1] <- "gene_id"
+rnor6.ranges <- makeGRangesFromDataFrame(rnor6, seqnames.field = "chromosome_name",
+                                         start.field = "start_position",
+                                         end.field = "end_position",
+                                         strand.field = "strand",
+                                         keep.extra.columns = TRUE)
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
 data <- RenameIdents(data, `0` = "Other cells", `1` = "Other cells",
@@ -48,9 +58,13 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/GD15.5/15.5_1-2-3-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
 rats <- gd15.5combined
-DefaultAssay(rats) <- "RNA"
+Annotation(rats) <- rnor6.ranges
+gene.activities <- GeneActivity(rats)
+rats[['RNA']] <- CreateAssayObject(counts = gene.activities[, colnames(rats)])
+rats <- NormalizeData(object = rats, assay = 'RNA', normalization.method = 'LogNormalize', scale.factor = median(rats$nCount_RNA))
+DefaultAssay(rats) <- 'RNA'
 
 transfer.anchors <- FindTransferAnchors(reference = rats.RNA, query = rats, reduction = 'cca')
 predicted.labels <- TransferData(anchorset = transfer.anchors, refdata = Idents(rats.RNA), weight.reduction = rats[['lsi']], dims=2:20)
@@ -58,11 +72,11 @@ predicted.labels <- TransferData(anchorset = transfer.anchors, refdata = Idents(
 rats <- AddMetaData(object = rats, metadata= predicted.labels)
 
 plot1 <- DimPlot(object = rats.RNA, cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD15.5 scRNA-seq')
-plot2 <- DimPlot(object=rats, group.by = 'predicted.id', cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD15.5 scATAC-seq')
+plot2 <- DimPlot(object=rats, group.by = 'predicted.id', label = T, repel = T) + ggtitle('GD15.5 scATAC-seq')
 
 plot1 + plot2
 
-save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
+#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
 
 table(rats$predicted.id)
 ```
@@ -90,26 +104,30 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/GD19.5/19.5_4-5-6-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
 rats <- gd19.5combined
-DefaultAssay(rats) <- "RNA" #same if we use MACS or RNA assay
+Annotation(rats) <- rnor6.ranges
+gene.activities <- GeneActivity(rats)
+rats[['RNA']] <- CreateAssayObject(counts = gene.activities[, colnames(rats)])
+rats <- NormalizeData(object = rats, assay = 'RNA', normalization.method = 'LogNormalize', scale.factor = median(rats$nCount_RNA))
+DefaultAssay(rats) <- 'RNA'
 
 transfer.anchors <- FindTransferAnchors(reference = rats.RNA, query = rats, reduction = 'cca')
 predicted.labels <- TransferData(anchorset = transfer.anchors, refdata = Idents(rats.RNA), weight.reduction = rats[['lsi']], dims=2:10)
 
-rats <- AddMetaData(object = rats, metadata= predicted.labels)
+rats <- AddMetaData(object = rats, metadata = predicted.labels)
 
 plot1 <- DimPlot(object = rats.RNA, cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD19.5 scRNA-seq')
-plot2 <- DimPlot(object=rats, group.by = 'predicted.id', cols = c("grey70", "orange3", "#718748", "#183D61", "#79704C", "red3")) + ggtitle('GD19.5 scATAC-seq')
+plot2 <- DimPlot(object=rats, group.by = 'predicted.id', label = T, repel = T) + ggtitle('GD19.5 scATAC-seq')
 
 plot1 + plot2
 
-save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
+#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
 
 table(rats$predicted.id)
 ```
 
 
 ```{r}
-ssessionInfo()
+sessionInfo()
 ```

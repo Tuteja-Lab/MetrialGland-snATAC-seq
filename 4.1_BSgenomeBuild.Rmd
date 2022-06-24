@@ -43,12 +43,12 @@ seqnames: c(1:20, "X", "Y")
 seqs_srcdir: /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl
 ```
 Third, build the package in R:
-```{r, eval = F}
+```{r, eval=FALSE}
 library(BSgenome)
-forgeBSgenomeDataPkg("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/")
+forgeBSgenomeDataPkg("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/BSgenome.Rnorvegicus.Ensembl.rn6-seed")
 ```
 Last, in command line, do the following:
-```{bash, eval = F}
+```{BASH, eval=FALSE}
 R CMD build /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
 R CMD check /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
 R CMD INSTALL /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
