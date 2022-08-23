@@ -1,0 +1,181 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+```{r}
+library("org.Rn.eg.db")
+library("clusterProfiler")
+
+go <- function(genes) {
+  GO <- enrichGO(gene = genes, OrgDb=org.Rn.eg.db, ont = "BP", pvalueCutoff = 0.05, qvalueCutoff = 0.05, maxGSSize=500, readable = T, keyType = "ENSEMBL")
+  goSimplify <- GO
+  res <- as.data.frame(goSimplify)
+  res$GeneRatio <- sapply(strsplit(res$GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$BgRatio <- sapply(strsplit(res$BgRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$Fold <- as.numeric(res$GeneRatio)/as.numeric(res$BgRatio)
+  res <- res[res$qvalue <= 0.05 & res$Fold >= 2 & res$Count >= 5,]
+  
+  return(res)
+}
+```
+
+## GD 15.5:
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+set.seed(1234)
+
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+t <- table(closest_genes$gene_name)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+data
+
+exp <- AverageExpression(data)
+exp <- as.data.frame(exp$RNA)
+```
+
+
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+pileup <- AverageExpression(rats, "MACSpeaks")
+pileup <- pileup$MACSpeaks
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), TBCregions=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), TBC=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$TBC <- ifelse(is.na(t1$TBC) == TRUE, 0, t1$TBC)
+t1 <- t1[t1$TBC > 0,]
+```
+
+Binning open regions and genes:
+```{r}
+#MA - HE - tissue specific
+maHe <- t1[t1$TBCregions < quantile(t1$TBCregions, 0.7) & t1$TBCregions > quantile(t1$TBCregions, 0.4) &
+           t1$TBC >= quantile(t1$TBC, 0.7),]
+go_maHe <- go(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"])
+go_maHe
+```
+
+```{r}
+#MA - ME - sensory perception
+maMe <- t1[t1$TBCregions < quantile(t1$TBCregions, 0.7) & t1$TBCregions > quantile(t1$TBCregions, 0.4) &
+             t1$TBC < quantile(t1$TBC, 0.7) & t1$TBC > quantile(t1$TBC, 0.4),]
+go_maMe <- go(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"])
+go_maMe
+```
+
+```{r}
+#HA - HE - house keeping
+haHe <- t1[t1$TBCregions >= quantile(t1$TBCregions, 0.7) &
+             t1$TBC >= quantile(t1$TBC, 0.7),]
+go_haHe <- go(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"])
+go_haHe
+```
+
+```{r}
+#HA - ME - repressed neural
+haMe <- t1[t1$TBCregions >= quantile(t1$TBCregions, 0.7) &
+             t1$TBC < quantile(t1$TBC, 0.7) & t1$TBC > quantile(t1$TBC, 0.4),]
+go_haMe <- go(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"])
+go_haMe
+```
+
+
+## GD 19.5:
+```{r}
+set.seed(1234)
+
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", sep = "\t")
+t <- table(closest_genes$gene_name)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+data2
+
+exp <- AverageExpression(data2)
+exp <- as.data.frame(exp$RNA)
+```
+
+
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+pileup <- AverageExpression(rats, "MACSpeaks")
+pileup <- pileup$MACSpeaks
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), TBCregions=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), TBC=exp$`6`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$TBC <- ifelse(is.na(t1$TBC) == TRUE, 0, t1$TBC)
+```
+
+Binning open regions and genes:
+```{r}
+#MA - HE - tissue specific
+maHe <- t1[t1$TBCregions < quantile(t1$TBCregions, 0.7) & t1$TBCregions > quantile(t1$TBCregions, 0.4) &
+           t1$TBC >= quantile(t1$TBC, 0.7),]
+go_maHe <- go(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"])
+go_maHe
+```
+
+```{r}
+#MA - ME - sensory perception
+maMe <- t1[t1$TBCregions < quantile(t1$TBCregions, 0.7) & t1$TBCregions > quantile(t1$TBCregions, 0.4) &
+             t1$TBC < quantile(t1$TBC, 0.7) & t1$TBC > quantile(t1$TBC, 0.4),]
+go_maMe <- go(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"])
+go_maMe
+```
+
+```{r}
+#HA - HE - house keeping
+haHe <- t1[t1$TBCregions >= quantile(t1$TBCregions, 0.7) &
+             t1$TBC >= quantile(t1$TBC, 0.7),]
+go_haHe <- go(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"])
+go_haHe
+```
+
+```{r}
+#HA - ME - repressed neural
+haMe <- t1[t1$TBCregions >= quantile(t1$TBCregions, 0.7) &
+             t1$TBC < quantile(t1$TBC, 0.7) & t1$TBC > quantile(t1$TBC, 0.4),]
+go_haMe <- go(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"])
+go_haMe
+```

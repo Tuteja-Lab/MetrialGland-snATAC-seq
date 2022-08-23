@@ -46,11 +46,11 @@ We first filter the low-quality cells, as determined in the previous step.
 ```{r}
 set.seed(1234)
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_1.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_1.rda")
 gd15.5_1 <- MACS
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_2.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_2.rda")
 gd15.5_2 <- MACS
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_3.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD15.5_3.rda")
 gd15.5_3 <- MACS
 
 gd15.5_1 <- subset(x = gd15.5_1, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
@@ -193,7 +193,7 @@ Fragments(gd15.5combined) <- fragments
 gd15.5combined <- FindNeighbors(object = gd15.5combined, reduction = 'lsi', dims = 2:20)
 gd15.5combined <- FindClusters(object = gd15.5combined, algorithm = 3, resolution = 0.8, verbose = FALSE)
 
-#save(gd15.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
+#save(gd15.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
 ```
 
 ## 2. GD 19.5:
@@ -201,11 +201,11 @@ The analyses in this section is similar to those for gd 15.5 We first filter the
 ```{r}
 set.seed(1234)
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_4.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_4.rda")
 gd19.5_4 <- MACS
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_5.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_5.rda")
 gd19.5_5 <- MACS
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/1_preprocess/2_MACS2Peaks/3_unfilteredObjects-MACSpeaks/GD19.5_6.rda")
 gd19.5_6 <- MACS
 
 gd19.5_4 <- subset(x = gd19.5_4, subset =  peak_region_fragments > 1000 & peak_region_fragments < 20000 &  pct_reads_in_peaks > 15 & TSS.enrichment > 1.5)
@@ -339,7 +339,7 @@ Fragments(gd19.5combined) <- fragments
 gd19.5combined <- FindNeighbors(object = gd19.5combined, reduction = 'lsi', dims = 2:10)
 gd19.5combined <- FindClusters(object = gd19.5combined, algorithm = 3, resolution = 0.8, verbose = FALSE)
 
-#save(gd19.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
+#save(gd19.5combined, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
 ```
 
 As a result, we have the following summary table of number of peaks and number of cell before and after filtering.

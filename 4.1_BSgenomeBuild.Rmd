@@ -23,18 +23,24 @@ knitr::opts_knit$set(width = 75)
 This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
 In order to carry out motif analysis, we need a `BSgenome` library for Rnor6. Following the instructions from https://www.bioconductor.org/packages/release/bioc/vignettes/BSgenome/inst/doc/BSgenomeForge.pdf we can develop the library. <br>
 
-First, we need to obtain DNA sequence fasta files from Ensembl. The fasta files of each chromosome should be named as `chromosomeName.fa`. For example, `1.fa` for DNA sequence of chromosome 1. <br>
+First, we need to obtain DNA sequence fasta files from Ensembl (http://ftp.ensembl.org/pub/release-98/fasta/rattus_norvegicus/dna/). The fasta files of each chromosome should be named as `chromosomeName.fa`. For example, `1.fa` for DNA sequence of chromosome 1. <br>
+It is possible to use `gz` files, but here I'm using `fa` files.
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
+for i in *gz; do e=`echo $i | sed 's/Rattus_norvegicus.Rnor_6.0.dna.chromosome.//g'`; mv $i $e; done
+for i in *fa.gz; do gunzip -d $i; done
+```
 Second, create a seed file like the following:
 ```
 Package: BSgenome.Rnorvegicus.Ensembl.rn6
-Title: Full genome sequences for Rattus norvegicus (Ensembl archive Sept. 2020)
-Description: Full genome sequences for Rattus norvegicus as provided by Ensembl, Sept. 2020 version.
+Title: Full genome sequences for Rattus norvegicus (Ensembl archive Sept. 2019)
+Description: Full genome sequences for Rattus norvegicus as provided by Ensembl, Sept. 2019 version.
 Version: 0.0.1
 organism: Rattus norvegicus
 common_name: Rat
 provider: Ensembl
 provider_version: rn6
-release_date: Sept. 2020
+release_date: Sept. 2019
 release_name: rnor6
 source_url: ftp://ftp.ensembl.org/pub/release-98/fasta/rattus_norvegicus/
 organism_biocview: Rattus_norvegicus
@@ -49,9 +55,15 @@ forgeBSgenomeDataPkg("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/BSg
 ```
 Last, in command line, do the following:
 ```{BASH, eval=FALSE}
-R CMD build /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
-R CMD check /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
-R CMD INSTALL /work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6-Ensembl/
+module load gcc/7.3.0-xegsmw4
+module load r/4.0.2-py3-icvulwq
+module load gsl/2.5-fpqcpxf
+module load udunits/2.2.24-yldmp4h
+module load gdal/2.4.4-nw2drgf
+module load geos/3.8.1-2m7gav4
+R CMD build /work/LAS/geetu-lab/hhvu/rstudio/packages/BSgenome.Rnorvegicus.Ensembl.rn6
+R CMD check /work/LAS/geetu-lab/hhvu/rstudio/packages/BSgenome.Rnorvegicus.Ensembl.rn6
+R CMD INSTALL /work/LAS/geetu-lab/hhvu/rstudio/packages/BSgenome.Rnorvegicus.Ensembl.rn6
 ```
 After this, the package `BSgenome.Rnorvegicus.Ensembl.rn6` will be ready to use.
 

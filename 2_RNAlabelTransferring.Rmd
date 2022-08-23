@@ -39,7 +39,7 @@ rnor6.ranges <- makeGRangesFromDataFrame(rnor6, seqnames.field = "chromosome_nam
                                          strand.field = "strand",
                                          keep.extra.columns = TRUE)
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
 data <- RenameIdents(data, `0` = "Other cells", `1` = "Other cells",
                      `2` = "Other cells", `3` = "Other cells", `4` = "Other cells",
                      `5` = "Other cells", `6` = "Natural killer cells",
@@ -58,7 +58,7 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
 rats <- gd15.5combined
 Annotation(rats) <- rnor6.ranges
 gene.activities <- GeneActivity(rats)
@@ -76,7 +76,7 @@ plot2 <- DimPlot(object=rats, group.by = 'predicted.id', label = T, repel = T) +
 
 plot1 + plot2
 
-#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
+#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
 
 table(rats$predicted.id)
 ```
@@ -85,7 +85,7 @@ table(rats$predicted.id)
 ```{r}
 set.seed(1234)
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
 data <- data2
 data <- RenameIdents(data, `0` = "Other cells", `1` = "Macrophage cells",
                      `2` = "Other cells", `3` = "Other cells", `4` = "Other cells",
@@ -104,7 +104,7 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
 rats <- gd19.5combined
 Annotation(rats) <- rnor6.ranges
 gene.activities <- GeneActivity(rats)
@@ -122,7 +122,7 @@ plot2 <- DimPlot(object=rats, group.by = 'predicted.id', label = T, repel = T) +
 
 plot1 + plot2
 
-#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/finalWorkflow/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
+#save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
 
 table(rats$predicted.id)
 ```
