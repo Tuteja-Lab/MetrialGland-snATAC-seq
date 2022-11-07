@@ -1,0 +1,183 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+  
+
+## GD 15.5:
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+
+exp <- AverageExpression(data)
+exp <- as.data.frame(exp$RNA)
+```
+
+Invasive trophoblast cells: <br>
+Correlation - normalize by default in Signac
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+pileup <- AverageExpression(rats, "MACSpeaks")
+pileup <- pileup$MACSpeaks
+
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T)
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+#start <- c()
+#end <- c()
+#for (i in 1:nrow(t1)) {
+#  start <- c(start, strsplit(t1$query_region, "-")[[i]][2])
+#  end <- c(end, strsplit(t1$query_region, "-")[[i]][3])
+#}
+#t1$start <- start
+#t1$end <- end
+#t1$width <- as.numeric(t1$end)-as.numeric(t1$start)
+
+cor(t1$express, t1$access)
+```
+If removing non-TBC genes and genes not expressed (expression = 0):
+```{r}
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+
+cor(t1$express, t1$access)
+```
+Normalize by peak length before normalizing by default in Seurat, then remove non-TBC genes and genes not expressed (expression = 0):
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+# first compute the length of each peak
+rats <- RegionStats(
+  object = rats,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6,
+  sep = c(":", "-")
+)
+
+# extract the width of each peak
+peak.width <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'meta.features')$sequence.length
+
+# extract the raw counts
+counts <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'counts')
+
+# divide the counts for each peak by the width of the peak
+norm.counts <- counts / peak.width
+
+# create a new assay with the normalized counts and perform the same processing 
+rats[['normPeaks']] <- CreateAssayObject(counts = norm.counts)
+DefaultAssay(rats) <- 'normPeaks'
+rats <- RunTFIDF(rats)
+rats <- FindTopFeatures(rats)
+rats <- RunSVD(rats, n = 50, reduction.key = 'LSI_', reduction.name = 'lsiNorm')
+rats <- RunUMAP(rats, dims = 2:10, reduction = 'lsiNorm', reduction.name = 'umapNorm')
+
+# compare UMAP embeddings for normalized vs raw counts
+p1 <- DimPlot(rats, reduction = 'umapNorm', label = TRUE) + NoLegend() + ggtitle('Length-normalized peak counts')
+p2 <- DimPlot(rats, reduction = 'umap', label = TRUE) + NoLegend() + ggtitle('Raw peak counts')
+
+cowplot::plot_grid(p1, p2)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+
+cor(t1$express, t1$access)
+```
+Normalize by peak length before normalizing by default in Seurat, then remove non-TBC genes and genes not expressed (expression = 0), and only keep promoter peaks:
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq
+module load bedtools2
+for i in gd*bed
+do
+e=`echo $i | sed 's/.bed/-Promoters.bed/g'`
+sed 's/chr//g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/rn6.promoters.bed | bedtools intersect -a $i -b - -wa -u > $e
+done
+```
+
+```{r}
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-Promoters.bed", header = F)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+cor(t1$express, t1$access)
+```
+
+```{r}
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-Promoters.bed", header = F)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+cor(t1$express, t1$access)
+```

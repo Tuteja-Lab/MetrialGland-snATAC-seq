@@ -1,0 +1,641 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+```{r}
+library("org.Rn.eg.db")
+library("clusterProfiler")
+
+go <- function(genes) {
+  GO <- enrichGO(gene = genes, OrgDb=org.Rn.eg.db, ont = "BP", pvalueCutoff = 0.05, qvalueCutoff = 0.05, maxGSSize=500, readable = T, keyType = "ENSEMBL")
+  goSimplify <- simplify(GO)
+  res <- as.data.frame(goSimplify)
+  #res$Rank <- seq(1, nrow(res))
+  res$GeneRatio <- sapply(strsplit(res$GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$BgRatio <- sapply(strsplit(res$BgRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$Fold <- as.numeric(res$GeneRatio)/as.numeric(res$BgRatio)
+  res <- res[res$qvalue <= 0.05 & res$Fold >= 2 & res$Count >= 5,]
+  
+  return(res)
+}
+```
+
+```{r}
+library(TissueEnrich)
+library(ggplot2)
+
+load(file = "Files/combine-test-expression1.Rdata")
+
+ratHumanOrthologs<-dataset$GRCH38$ratHumanOrthologs
+humanGeneMapping<-dataset$GRCH38$humanGeneMapping
+
+#For VentoTormo Data
+d <- dataset$PlacentaDeciduaBloodData
+data <- d$expressionData
+cellDetails <- d$cellDetails
+
+expressionData <- data[intersect(row.names(data), ratHumanOrthologs$Human.gene.stable.ID),]
+se <- SummarizedExperiment(assays = SimpleList(as.matrix(expressionData)), rowData = row.names(expressionData), colData = colnames(expressionData))
+cellSpecificGenesExp <- teGeneRetrieval(se, expressedGeneThreshold = 1)
+```
+
+```{r}
+runPCE <- function(inputGenes, nameType = c("Gene.name", "Gene.stable.ID")) {
+  if (nameType == "Gene.name") {
+    humanOrthologs <- ratHumanOrthologs[ratHumanOrthologs$Gene.name %in% toupper(inputGenes),]
+  } else {
+    humanOrthologs <- ratHumanOrthologs[ratHumanOrthologs$Gene.stable.ID %in% inputGenes,]
+  }
+  inputGenes <- humanOrthologs$Human.gene.stable.ID
+  print(paste("Number of input genes found is", length(inputGenes)))
+  gs <- GeneSet(geneIds=toupper(inputGenes))
+  output2 <- teEnrichmentCustom(gs, cellSpecificGenesExp)
+  enrichmentOutput <- setNames(data.frame(assay(output2[[1]]), row.names = rowData(output2[[1]])[,1]), colData(output2[[1]])[,1])
+  row.names(cellDetails) <- cellDetails$RName
+  enrichmentOutput$Tissue <- cellDetails[row.names(enrichmentOutput), "CellName"]
+  
+  return(enrichmentOutput)
+}
+
+plotPCE <- function(enrichmentOutput, name) {
+  p <- ggplot(enrichmentOutput,aes(x=reorder(Tissue,-Log10PValue),y=Log10PValue,
+                                 label = Tissue.Specific.Genes, fill=Tissue))+
+  geom_bar(stat = 'identity')+
+    labs(x='', y = '-LOG10(Adj. P-Value)')+
+    theme_bw()+
+    theme(legend.position='none', plot.margin=unit(c(1,1,1,1),"cm"))+
+    theme(plot.title = element_text(hjust = 0.5,size = 20),axis.title =
+            element_text(size=15))+
+    theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1),
+          panel.grid.major= element_blank(),panel.grid.minor = element_blank())+
+    ggtitle(name)
+  
+  return(p)
+}
+```
+
+TissueEnrich
+```{r}
+runTE <- function(inputGenes, nameType = c("Gene.name", "Gene.stable.ID")) {
+  if (nameType == "Gene.name") {
+    humanOrthologs <- ratHumanOrthologs[ratHumanOrthologs$Gene.name %in% toupper(inputGenes),]
+  } else {
+    humanOrthologs <- ratHumanOrthologs[ratHumanOrthologs$Gene.stable.ID %in% inputGenes,]
+  }
+  inputGenes <- humanOrthologs$Human.gene.name
+  print(paste("Number of input genes found is", length(inputGenes)))
+  gs <- GeneSet(geneIds=toupper(inputGenes),organism="Homo Sapiens",geneIdType=SymbolIdentifier())
+  output <- teEnrichment(gs)
+  enrichmentOutput <- setNames(data.frame(assay(output[[1]]), row.names = rowData(output[[1]])[,1]), colData(output[[1]])[,1])
+  enrichmentOutput$Tissue <- rownames(enrichmentOutput)
+  
+  return(enrichmentOutput)
+}
+```
+
+
+## GD 15.5:
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(ggpubr)
+library(GenomicRanges)
+library(patchwork)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+
+exp <- AverageExpression(data)
+exp <- as.data.frame(exp$RNA)
+```
+
+Getting promoter peaks for both timepoints and all cell populations:
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq
+module load bedtools2
+for i in gd*bed
+do
+e=`echo $i | sed 's/.bed/-Promoters.bed/g'`
+sed 's/chr//g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/rn6.promoters.bed | bedtools intersect -a $i -b - -wa -u > $e
+done
+```
+Normalize by peak length before normalizing by default in Seurat:
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+# first compute the length of each peak
+rats <- RegionStats(
+  object = rats,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6,
+  sep = c(":", "-")
+)
+
+# extract the width of each peak
+peak.width <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'meta.features')$sequence.length
+
+# extract the raw counts
+counts <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'counts')
+
+# divide the counts for each peak by the width of the peak
+norm.counts <- counts / peak.width
+
+# create a new assay with the normalized counts and perform the same processing 
+rats[['normPeaks']] <- CreateAssayObject(counts = norm.counts)
+DefaultAssay(rats) <- 'normPeaks'
+rats <- RunTFIDF(rats)
+rats <- FindTopFeatures(rats)
+rats <- RunSVD(rats, n = 50, reduction.key = 'LSI_', reduction.name = 'lsiNorm')
+rats <- RunUMAP(rats, dims = 2:20, reduction = 'lsiNorm', reduction.name = 'umapNorm')
+```
+
+Invasive trophoblast cells: <br>
+Correlation - remove non-TBC genes and genes not expressed (expression = 0), and only keep promoter peaks:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T)
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+write.table(t1, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-proGeneCorr.txt", sep = "\t", quote = F, row.names = F)
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", exact = F)
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+
+ggplot(t1, aes(x=log10(express+10^(-5)), y=log10(access+10^(-5)))) + geom_point() + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Invasive Trophoblast-Specific Peaks at gd 15.5") + stat_cor(method = "spearman", label.y = 5, cor.coef.name = "rho")
+```
+
+Genes with >= 3 peaks tend to be higher expressed:
+```{r}
+t <- table(closest_genes$gene_name)
+
+genes <- names(t[t >= 3])
+
+exp <- exp[order(rownames(exp)),]
+exp$gene <- rownames(exp)
+df <- exp[exp$gene %in% names(t), c("gene", "23")]
+colnames(df) <- c("gene", "value")
+df2 <- data.frame(gene = setdiff(names(t), df$gene), value = rep(0, length(setdiff(names(t), df$gene))))
+names(df2) <- colnames(df)
+df <- rbind(df, df2)
+
+df$category <- ifelse(df$gene %in% genes, ">= 3 peaks", "< 3 peaks")
+
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD15.5")
+
+print("Number of genes with >= 3 peaks:")
+length(genes)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+Binning open regions and genes:
+```{r}
+#MA - HE - tissue specific
+maHe <- t1[t1$access < quantile(t1$access, 0.25) &
+           t1$express > quantile(t1$express, 0.6),]
+length(unique(maHe$gene_name))
+length(unique(maHe$query_region))
+
+#go_maHe <- go(unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]))
+#go_maHe
+
+#pce_maHE <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_maHE, "PCE MA-HE gd15.5")
+
+#te_maHE <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_maHE <- te_maHE[te_maHE$Log10PValue >= -log10(0.05) & te_maHE$fold.change >= 2 & te_maHE$samples >= 5,]
+#plotPCE(te_maHE, "TE MA-HE gd15.5")
+```
+
+```{r}
+#HA - HE - house keeping
+haHe <- t1[t1$access > quantile(t1$access, 0.6) &
+             t1$express > quantile(t1$express, 0.6),]
+length(unique(haHe$gene_name))
+length(unique(haHe$query_region))
+
+#go_haHe <- go(unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]))
+#go_haHe
+
+#pce_haHE <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_haHE, "PCE HA-HE gd15.5")
+
+#te_haHE <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_haHE <- te_haHE[te_haHE$Log10PValue >= -log10(0.05) & te_haHE$fold.change >= 2 & te_haHE$samples >= 5,]
+#plotPCE(te_haHE, "TE HA-HE gd15.5")
+```
+
+
+```{r}
+#MA - ME - sensory perception
+maMe <- t1[t1$access < quantile(t1$access, 0.25) &
+           t1$express < quantile(t1$express, 0.25),]
+length(unique(maMe$gene_name))
+length(unique(maMe$query_region))
+
+#go_maMe <- go(unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]))
+#go_maMe
+
+#pce_maMe <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_maMe, "PCE MA - ME gd15.5")
+
+#te_maMe <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_maMe <- te_maMe[te_maMe$Log10PValue >= -log10(0.05) & te_maMe$fold.change >= 2 & te_maMe$samples >= 5,]
+#plotPCE(te_maMe, "TE MA - ME gd15.5")
+```
+
+```{r}
+#HA - ME - repressed neural
+haMe <- t1[t1$access > quantile(t1$access, 0.6) &
+             t1$express < quantile(t1$express, 0.25),]
+length(unique(haMe$gene_name))
+length(unique(haMe$query_region))
+
+#go_haMe <- go(unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]))
+#go_haMe
+
+#pce_haMe <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_haMe, "PCE HA - ME gd15.5")
+
+#te_haMe <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_haMe <- te_haMe[te_haMe$Log10PValue >= -log10(0.05) & te_haMe$fold.change >= 2 & te_haMe$samples >= 5,]
+#plotPCE(te_haMe, "TE HA - ME gd15.5")
+```
+
+If we only have two groups, high accessibility and mid-low accessibility: <br>
+high accessibility
+```{r}
+#HA
+ha <- t1[t1$access > quantile(t1$access, 0.6),]
+length(unique(ha$gene_name))
+length(unique(ha$query_region))
+
+go_ha <- go(unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]))
+dim(go_ha)
+
+pce_ha <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+pce_ha <- pce_ha[pce_ha$Log10PValue >= -log10(0.05) & pce_ha$fold.change >= 2 & pce_ha$Tissue.Specific.Genes >= 3,]
+plotPCE(pce_ha, "PCE HA gd15.5")
+
+te_ha <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+te_ha <- te_ha[te_ha$Log10PValue >= -log10(0.05) & te_ha$fold.change >= 2 & te_ha$samples >= 3,]
+plotPCE(te_ha, "TE HE gd15.5")
+```
+mid-low accessibility
+```{r}
+#MA
+ma <- t1[t1$access < quantile(t1$access, 0.25),]
+length(unique(ma$gene_name))
+length(unique(ma$query_region))
+
+go_ma <- go(unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]))
+dim(go_ma)
+
+pce_ma <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+pce_ma <- pce_ha[pce_ma$Log10PValue >= -log10(0.05) & pce_ma$fold.change >= 2 & pce_ma$Tissue.Specific.Genes >= 3,]
+#plotPCE(pce_ma, "PCE ma gd15.5")
+
+te_ma <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+te_ma <- te_ma[te_ma$Log10PValue >= -log10(0.05) & te_ma$fold.change >= 2 & te_ma$samples >= 3,]
+#plotPCE(te_ma, "TE ma gd15.5")
+```
+
+```{r}
+library(ensembldb)
+library(biovizBase)
+library(EnsDb.Rnorvegicus.v98)
+library(AnnotationHub)
+library(AnnotationForge)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/unintegrated_2timepoints.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+unintegrated <- RenameIdents(unintegrated, `GD15.5_TBC` = "GD15.5_Trophoblast_cells", `GD19.5_TBC` = "GD19.5_Trophoblast_cells")
+DefaultAssay(unintegrated) <- "MACSpeaks"
+
+#file <- ensDbFromGtf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/Rattus_norvegicus.Rnor_6.0.98.gtf")
+#rnor6.ensDB <- EnsDb(file)
+annotations <- suppressWarnings(GetGRangesFromEnsDb(ensdb = EnsDb.Rnorvegicus.v98))
+annotations <- subset(annotations, gene_biotype=="protein_coding")
+seqlevelsStyle(annotations) <- "Ensembl"
+Annotation(unintegrated) <- annotations
+
+
+
+cov_plot <- CoveragePlot( 
+  object = unintegrated,
+  region = "1-12823363-12825786", #13928 from gene, coaccess with 1-12821801-12824732 (promoter peak)
+  feature = "Cited2",
+  annotation = T,
+  peaks = TRUE,
+  heights = c(6, 1, 1),
+  extend.upstream = 230000,
+  extend.downstream = 20000,
+  idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells")
+)
+
+cov_plot
+
+
+cov_plot <- CoveragePlot( 
+  object = unintegrated,
+  region = "3-170550314-170558194",
+  feature = "Tfap2c",
+  annotation = TRUE,
+  peaks = TRUE,
+  heights = c(6, 1, 1),
+  extend.upstream = 20000,
+  extend.downstream = 120000,
+  idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells")
+)
+
+cov_plot
+
+#11-36075709-36092495
+cov_plot <- CoveragePlot( 
+  object = unintegrated,
+  region = "11-36063454-36063741",
+  feature = "Ets2",
+  annotation = TRUE,
+  peaks = TRUE,
+  heights = c(6, 1, 1),
+  extend.upstream = 5000,
+  extend.downstream = 5000,
+  idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells")
+)
+
+cov_plot
+```
+
+## GD 19.5:
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+data2
+
+exp <- AverageExpression(data2)
+exp <- as.data.frame(exp$RNA)
+```
+Normalize by peak length before normalizing by default in Seurat:
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+# first compute the length of each peak
+rats <- RegionStats(
+  object = rats,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6,
+  sep = c(":", "-")
+)
+
+# extract the width of each peak
+peak.width <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'meta.features')$sequence.length
+
+# extract the raw counts
+counts <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'counts')
+
+# divide the counts for each peak by the width of the peak
+norm.counts <- counts / peak.width
+
+# create a new assay with the normalized counts and perform the same processing 
+rats[['normPeaks']] <- CreateAssayObject(counts = norm.counts)
+DefaultAssay(rats) <- 'normPeaks'
+rats <- RunTFIDF(rats)
+rats <- FindTopFeatures(rats)
+rats <- RunSVD(rats, n = 50, reduction.key = 'LSI_', reduction.name = 'lsiNorm')
+rats <- RunUMAP(rats, dims = 2:10, reduction = 'lsiNorm', reduction.name = 'umapNorm')
+```
+
+
+Invasive trophoblast cells: <br>
+Correlation - remove non-TBC genes and genes not expressed (expression = 0), and only keep promoter peaks:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", sep = "\t")
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster6.txt", header = T)
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`6`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+write.table(t1, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-proGeneCorr.txt", sep = "\t", quote = F, row.names = F)
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+
+ggplot(t1, aes(x=log10(express+10^(-5)), y=log10(access+10^(-5)))) + geom_point() + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Invasive Trophoblast-Specific Peaks at gd 19.5") + stat_cor(method = "spearman", label.y = 4.5, cor.coef.name = "rho")
+```
+
+Genes with >= 3 peaks tend to be higher expressed:
+```{r}
+t <- table(closest_genes$gene_name)
+
+genes <- names(t[t >= 3])
+
+exp <- exp[order(rownames(exp)),]
+exp$gene <- rownames(exp)
+df <- exp[exp$gene %in% names(t), c("gene", "6")]
+colnames(df) <- c("gene", "value")
+df2 <- data.frame(gene = setdiff(names(t), df$gene), value = rep(0, length(setdiff(names(t), df$gene))))
+names(df2) <- colnames(df)
+df <- rbind(df, df2)
+df$category <- ifelse(df$gene %in% genes, ">= 3 peaks", "< 3 peaks")
+
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD19.5")
+
+print("Number of genes with >= 3 peaks:")
+length(genes)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+Binning open regions and genes:
+```{r}
+#MA - HE - tissue specific
+maHe <- t1[t1$access < quantile(t1$access, 0.25) &
+             t1$express > quantile(t1$express, 0.6),]
+length(unique(maHe$gene_name))
+length(unique(maHe$query_region))
+View(maHe)
+#go_maHe <- go(unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]))
+#go_maHe
+
+#pce_maHE <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_maHE, "PCE MA-HE gd19.5")
+
+#te_maHE <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_maHE <- te_maHE[te_maHE$Log10PValue >= -log10(0.05) & te_maHE$fold.change >= 2 & te_maHE$samples >= 5,]
+#plotPCE(te_maHE, "TE MA-HE gd19.5")
+```
+
+```{r}
+#HA - HE - house keeping
+haHe <- t1[t1$access > quantile(t1$access, 0.6) &
+             t1$express > quantile(t1$express, 0.6),]
+length(unique(haHe$gene_name))
+length(unique(haHe$query_region))
+View(haHe)
+#go_haHe <- go(unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]))
+#go_haHe
+
+#pce_haHE <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_haHE, "PCE HA-HE gd19.5")
+
+#te_haHE <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haHe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_haHE <- te_haHE[te_haHE$Log10PValue >= -log10(0.05) & te_haHE$fold.change >= 2 & te_haHE$samples >= 5,]
+#plotPCE(te_haHE, "TE HA-HE gd19.5")
+```
+
+
+```{r}
+#MA - ME - sensory perception
+maMe <- t1[t1$access < quantile(t1$access, 0.25) &
+             t1$express < quantile(t1$express, 0.25),]
+length(unique(maMe$gene_name))
+length(unique(maMe$query_region))
+View(maMe)
+#go_maMe <- go(unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]))
+#go_maMe
+
+#pce_maMe <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_maMe, "PCE MA - ME gd19.5")
+
+#te_maMe <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% maMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_maMe <- te_maMe[te_maMe$Log10PValue >= -log10(0.05) & te_maMe$fold.change >= 2 & te_maMe$samples >= 5,]
+#plotPCE(te_maMe, "TE MA - ME gd19.5")
+```
+
+```{r}
+#HA - ME - repressed neural
+haMe <- t1[t1$access > quantile(t1$access, 0.6) &
+             t1$express < quantile(t1$express, 0.25),]
+length(unique(haMe$gene_name))
+length(unique(haMe$query_region))
+View(haMe)
+#go_haMe <- go(unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]))
+#go_haMe
+
+#pce_haMe <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#plotPCE(pce_haMe, "PCE HA - ME gd19.5")
+
+#te_haMe <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% haMe$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+#te_haMe <- te_haMe[te_haMe$Log10PValue >= -log10(0.05) & te_haMe$fold.change >= 2 & te_haMe$samples >= 5,]
+#plotPCE(te_haMe, "TE HA - ME gd19.5")
+```
+
+If we only have two groups, high accessibility and mid-low accessibility: <br>
+high accessibility
+```{r}
+#HA
+ha <- t1[t1$access > quantile(t1$access, 0.6),]
+length(unique(ha$gene_name))
+length(unique(ha$query_region))
+View(ha)
+go_ha <- go(unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]))
+dim(go_ha)
+
+pce_ha <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+pce_ha <- pce_ha[pce_ha$Log10PValue >= -log10(0.05) & pce_ha$fold.change >= 2 & pce_ha$Tissue.Specific.Genes >= 3,]
+dim(pce_ha)
+#plotPCE(pce_ha, "PCE HA gd19.5")
+
+te_ha <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ha$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+te_ha <- te_ha[te_ha$Log10PValue >= -log10(0.05) & te_ha$fold.change >= 2 & te_ha$samples >= 3,]
+dim(te_ha)
+plotPCE(te_ha, "TE HE gd19.5")
+```
+mid-low accessibility
+```{r}
+#MA
+ma <- t1[t1$access < quantile(t1$access, 0.25),]
+length(unique(ma$gene_name))
+length(unique(ma$query_region))
+View(ma)
+go_ma <- go(unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]))
+dim(go_ma)
+
+pce_ma <- runPCE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+pce_ma <- pce_ha[pce_ma$Log10PValue >= -log10(0.05) & pce_ma$fold.change >= 2 & pce_ma$Tissue.Specific.Genes >= 3,]
+#plotPCE(pce_ma, "PCE ma gd19.5")
+
+te_ma <- runTE(inputGenes = unique(closest_genes[closest_genes$gene_name %in% ma$gene_name, "ensembl_gene_id"]), nameType = "Gene.stable.ID")
+te_ma <- te_ma[te_ma$Log10PValue >= -log10(0.05) & te_ma$fold.change >= 2 & te_ma$samples >= 3,]
+#plotPCE(te_ma, "TE ma gd19.5")
+```
+
+
+```{r}
+sessionInfo()
+```

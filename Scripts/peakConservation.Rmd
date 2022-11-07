@@ -1,0 +1,242 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+
+# Common peaks
+We first define common peaks to regions enriched in TBC cluster at GD15.5 and GD19.5 that overlap by at least 50\%. <br>
+```{BASH, eval = F}
+module load bedtools2
+
+bedtools intersect -a /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.bed -f 0.5 -r -wa -wb > /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks.bed
+
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/
+cut -f1-4 commonPeaks.bed | sort -u > commonPeaks-gd15.5.bed
+cut -f5-8 commonPeaks.bed | sort -u > commonPeaks-gd19.5.bed
+```
+
+From hereafter, we will be using GD19.5 coordinates of the common peaks for downstream analyses. <br>
+Convert common peaks (gd19.5 coordinates) to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
+```{Bash, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+module load bedtools2
+sed -i 's/chr//g' commonPeaks-gd19.5-hg38Coor.bed
+bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa | sort -u > commonPeaks-gd19.5-hg38Coor-inEVT.bed
+bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wb | cut -f 6-9 | sort -u | head > EVTinCommonPeaks-gd19.5-hg38Coor.bed
+```
+
+Number of common peaks: 1242 (`wc -l commonPeaks-gd19.5.bed`) <br>
+Number of conserved common peaks: 264 (`wc -l commonPeaks-gd19.5-hg38Coor-inEVT.bed`) (21.25\%).
+
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header = F)
+closestGenesRats <- ClosestFeature(rats, regions = peaks$V4)
+```
+
+There were only 10 EVT peaks overlapping with rat peaks. They are the nearest to 10 genes: 
+```
+AFAP1L2	EVT_peaks_peak_19763 (+81,739)
+CYP17A1	EVT_peaks_peak_19173 (+23,284)
+ERLIN1	EVT_peaks_peak_18942 (+41,383)
+FANK1	EVT_peaks_peak_20611 (+175,905)
+FZD8	EVT_peaks_peak_15821 (-361,339)
+ITGB1	EVT_peaks_peak_15602 (+18,487)
+JCAD	EVT_peaks_peak_15407 (-112,278)
+KLF6	EVT_peaks_peak_13878 (-41,848), EVT_peaks_peak_13864 (+44,482)
+PRTFDC1	EVT_peaks_peak_15067 (-10,903)
+```
+
+Venn diagram
+```{r}
+library("VennDiagram")
+gd15.5 <- seq(1,3842)
+gd19.5 <- seq(3842-1241,3842-1241+2032)
+venn.diagram(list(gd15.5=gd15.5, gd19.5=gd19.5), filename = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/venn.commPeaks.png")
+```
+
+# DA peaks at gd15.5
+```{r, eval=F}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+write.table(rownames(rats), "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/allGD15.5peaks.txt", quote = F, row.names = F)
+```
+In BASH:
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/
+cut -f 1 gd15.5TBC.txt | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > gd15.5TBC-DApeaks.bed
+tail -n +2 allGD15.5peaks.txt | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > allGD15.5peaks.bed
+
+module load bedtools2
+bedtools intersect -a allGD15.5peaks.bed -b gd15.5TBC-DApeaks.bed -wa -wb > gd15.5TBC-DApeaks-original.bed
+cut -f 1-4 gd15.5TBC-DApeaks-original.bed | sed 's/^/chr/g' > gd15.5TBC-DApeaks-original.chr.bed
+```
+Convert DA peaks to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
+```{Bash, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks
+module load bedtools2
+sed -i 's/chr//g' gd15.5TBC-DApeaks-original-hg38Coor.bed
+bedtools intersect -a gd15.5TBC-DApeaks-original-hg38Coor.bed -b ../commonPeaks/EVTpeaks.bed -wa | sort -u > da15.5-hg38Coor-inEVT.bed
+```
+
+Number of DA peaks at gd15.5: 59 (`wc -l gd15.5TBC-DApeaks-original.chr.bed`) <br>
+Number of conserved DA peaks at gd15.5: 15 (`wc -l da15.5-hg38Coor-inEVT.bed`) (25.42\%).
+
+# DA peaks at gd19.5
+```{r, eval=F}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+write.table(rownames(rats), "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/allGD19.5peaks.txt", quote = F, row.names = F)
+```
+In BASH:
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/
+cut -f 1 gd19.5TBC.txt | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > gd19.5TBC-DApeaks.bed
+tail -n +2 allGD19.5peaks.txt | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > allGD19.5peaks.bed
+
+module load bedtools2
+bedtools intersect -a allGD19.5peaks.bed -b gd19.5TBC-DApeaks.bed -wa -wb > gd19.5TBC-DApeaks-original.bed
+cut -f 1-4 gd19.5TBC-DApeaks-original.bed | sed 's/^/chr/g' > gd19.5TBC-DApeaks-original.chr.bed
+```
+Convert DA peaks to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
+```{Bash, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks
+module load bedtools2
+sed -i 's/chr//g' gd19.5TBC-DApeaks-original-hg38Coor.bed
+bedtools intersect -a gd19.5TBC-DApeaks-original-hg38Coor.bed -b ../commonPeaks/EVTpeaks.bed -wa | sort -u > da19.5-hg38Coor-inEVT.bed
+```
+
+Number of DA peaks at gd19.5: 181 (`wc -l gd19.5TBC-DApeaks-original.chr.bed`) <br>
+Number of conserved DA peaks at gd19.5: 13 (`wc -l da19.5-hg38Coor-inEVT.bed`) (7.18\%).
+
+# Common but not DA peaks
+We first define common peaks to regions enriched in TBC cluster at GD15.5 and GD19.5 that overlap by at least 50\%. <br>
+```{BASH, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/
+module load bedtools2
+
+bedtools intersect -a /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd15.5TBC-DApeaks-original.bed -v > /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/gd15.5-TBCnonDA.bed
+
+bedtools intersect -a /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC-DApeaks-original.bed -v > /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/gd19.5-TBCnonDA.bed
+
+bedtools intersect -a /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/gd15.5-TBCnonDA.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/gd19.5-TBCnonDA.bed -f 0.5 -r -wa -wb > /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonNonDAPeaks.bed
+
+cut -f1-4 commonNonDAPeaks.bed | sort -u > commonNonDAPeaks-gd15.5.bed
+cut -f5-8 commonNonDAPeaks.bed | sort -u > commonNonDAPeaks-gd19.5.bed
+sed 's/^/chr/g' commonNonDAPeaks-gd19.5.bed > commonNonDAPeaks-gd19.5.chr.bed
+```
+
+From hereafter, we will be using GD19.5 coordinates of the common peaks for downstream analyses. <br>
+Convert common peaks (gd19.5 coordinates) to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
+```{Bash, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+module load bedtools2
+sed -i 's/chr//g' commonNonDAPeaks-gd19.5-hg38Coor.bed
+bedtools intersect -a commonNonDAPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa | sort -u > commonNonDAPeaks-gd19.5-hg38Coor-inEVT.bed
+```
+
+Number of common peaks: 1238 (`wc -l commonNonDAPeaks-gd19.5.bed`) <br>
+Number of conserved common peaks: 262 (`wc -l commonNonDAPeaks-gd19.5-hg38Coor-inEVT.bed`) (21.16\%).
+
+# Conserved peaks GO
+```{r}
+library("org.Rn.eg.db")
+library("clusterProfiler")
+
+go <- function(genes) {
+  GO <- enrichGO(gene = genes, OrgDb=org.Rn.eg.db, ont = "BP", pvalueCutoff = 0.05, qvalueCutoff = 0.05, maxGSSize=500, readable = T, keyType = "ENSEMBL")
+  goSimplify <- simplify(GO)
+  res <- as.data.frame(goSimplify)
+  #res$Rank <- seq(1, nrow(res))
+  res$GeneRatio <- sapply(strsplit(res$GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$BgRatio <- sapply(strsplit(res$BgRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$Fold <- as.numeric(res$GeneRatio)/as.numeric(res$BgRatio)
+  res <- res[res$qvalue <= 0.05 & res$Fold >= 2 & res$Count >= 5,]
+  
+  return(res)
+}
+```
+
+
+```{r}
+library(Signac)
+library(Seurat)
+library(JASPAR2020)
+library(TFBSTools)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+library(patchwork)
+library(dplyr)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+da19.5peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/da19.5-hg38Coor-inEVT.bed", header = F)
+closest_genes2 <- ClosestFeature(rats, regions = da19.5peaks$V4)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+da15.5peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/da15.5-hg38Coor-inEVT.bed", header = F)
+closest_genes3 <- ClosestFeature(rats, regions = da15.5peaks$V4)
+
+genes <- unique(c(closest_genes$ensembl_gene_id, closest_genes2$ensembl_gene_id, closest_genes3$ensembl_gene_id))
+g <- go(genes)
+
+write.table(g, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/conservedPeaks_go.txt", sep = "\t", quote = F, row.names = F)
+
+r <- g[g$Description %in% c("angiogenesis",
+                            "epithelial tube morphogenesis",
+                            "embryonic placenta development",
+                            "integrin-mediated signaling pathway",
+                            "actin filament bundle assembly"),]
+
+ggplot(data=r, aes(x=reorder(Description, -log10(as.numeric(qvalue))), y=-log10(as.numeric(qvalue)))) +
+  geom_bar(stat="identity", fill="#008837", width = 0.7) + coord_flip() +
+  labs(title = "Common and conserved peaks",
+       y = "-log10(q-value)",
+       x = "") +
+  theme(plot.title = element_text(size = 25, face = "bold"), legend.text=element_text(size=25),
+        axis.text=element_text(size=25), axis.title.x = element_text(size = 25))
+
+```

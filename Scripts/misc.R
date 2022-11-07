@@ -119,3 +119,105 @@ cov_plot <- CoveragePlot(
 
 cov_plot
 ```
+
+```{r}
+t2 <- closest_genes[closest_genes$gene_name %in% df[df$category == ">= 3 peaks", "gene"],]
+#go(unique(t2$ensembl_gene_id)) #no terms enriched
+
+gd15.5tbc <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scRNA-seq-analysis/3_cluster_DEG/rmChrMTgenes/GD15.5/res0.8/gd15.5-wilcoxin-cluster23.txt", header = T)
+length(intersect(df[df$category == ">= 3 peaks", "gene"], gd15.5tbc$gene))
+length(unique(df[df$category == ">= 3 peaks", "gene"]))
+intersect(df[df$category == ">= 3 peaks", "gene"], gd15.5tbc$gene) #57 genes out of 255 genes are TBC genes
+genes <- names(t[t >= 4])
+length(intersect(genes, gd15.5tbc$gene)) #25 out of 57 genes have >= 4 peaks
+genes <- names(t[t >= 5])
+length(genes)
+length(intersect(genes, gd15.5tbc$gene)) #16 out of 57 genes have >= 5 peaks
+```
+
+
+library(Signac)
+library(Seurat)
+library(JASPAR2020)
+library(TFBSTools)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+library(patchwork)
+library(dplyr)
+library(org.Rn.eg.db)
+library(clusterProfiler)
+library(chromVAR)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/6_networks/ccans-gd19.5.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/6_networks/conns-gd19.5.rda")
+
+t <- conns[conns$Peak1 == "1-12808761-12809434" | conns$Peak2 == "1-12808761-12809434",]
+t <- t[t$coaccess > 0,]
+
+enriched.motifs <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/common19.5-ratsMotifs.txt", header = T, sep = "\t")
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithMousePFM.rda")
+rats <- RunChromVAR(rats, genome = BSgenome.Rnorvegicus.Ensembl.rn6)
+rats2 <- rats
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+
+chromvar.data <- GetAssayData(object =  rats2, slot = 'data')
+rats[["chromvar"]] <- CreateAssayObject(data = chromvar.data)
+DefaultAssay(rats) <- 'chromvar'
+
+
+FeaturePlot(
+  object = rats,
+  features = "MA0524.2",
+  pt.size = 0.1,
+  label = T,
+  repel = T)
+FeaturePlot(
+  object = rats,
+  features = "MA0814.2",
+  pt.size = 0.1)
+FeaturePlot(
+  object = rats,
+  features = "MA0815.1",
+  pt.size = 0.1)
+
+
+aver_chromvar <- AverageExpression(rats, assays = "chromvar", features = enriched.motifs$motif[1:10]) %>%
+  as.data.frame()
+
+# sort the heatmap prior to plotting find column index for maxium value for each TF activity
+aver_chromvar <- aver_chromvar[do.call(order, c(aver_chromvar, list(decreasing=TRUE))),]
+aver_chromvar$max <- max.col(aver_chromvar)
+aver_chromvar <- aver_chromvar[order(aver_chromvar$max), ]
+aver_chromvar <- dplyr::select(aver_chromvar, -max)
+colnames(aver_chromvar) <- levels(Idents(rats))
+pheatmap::pheatmap(aver_chromvar,scale = "row",
+                   cluster_cols=F,cluster_rows = F,
+                   show_rownames=T) #450x640
+
+# gather the footprinting information for sets of motifs
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithHumanPFM.rda")
+peaks.1based <- GRangesToString(
+  grange = StringToGRanges(
+    regions = rownames(rats),
+    sep = c(":","-"),
+    starts.in.df.are.0based = TRUE
+  ),
+  sep = c(":", "-")
+)
+rownames(rats@assays[["MACSpeaks"]]@CountS) <- ATAC.1based
+rownames(rats@assays[["MACSpeaks"]]@DaTa) <- ATAC.1based
+rownames(rats@assays[["MACSpeaks"]]@meta.features) <- ATAC.1based
+
+gorb <- StringToGRanges(ATAC.1based, sep = c("-", "-"))
+aggr@assays[["peaks"]]@ranges <- gorb
+rats <- Footprint(
+  object = rats,
+  motif.name = c("TFAP2C"),
+  in.peaks = TRUE,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6
+)
+
+# plot the footprint data for each group of cells
+PlotFootprint(rats, features = c("TFAP2C"))

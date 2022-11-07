@@ -1,0 +1,215 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+## GD 15.5:
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+rats1.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-unfilteredMarkers.txt", header = T, sep = "\t")
+```
+Natural killer cells:
+```{r}
+nk15.5 <- rats1.markers[rats1.markers$cluster == "Natural killer cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(nk15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-nk.txt", quote = F, sep = '\t')
+dim(nk15.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(nk15.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-nk-toGenes.txt", quote = F, sep = '\t')
+```
+Smooth muscle cells:
+```{r}
+sm15.5 <- rats1.markers[rats1.markers$cluster == "Smooth muscle cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(sm15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-sm.txt", quote = F, sep = '\t')
+dim(sm15.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(sm15.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-sm-toGenes.txt", quote = F, sep = '\t')
+```
+Endothelial cells:
+```{r}
+endo15.5 <- rats1.markers[rats1.markers$cluster == "Endothelial cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(endo15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-endo.txt", quote = F, sep = '\t')
+dim(endo15.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(endo15.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-endo-toGenes.txt", quote = F, sep = '\t')
+```
+Macrophage cells:
+```{r}
+macro15.5 <- rats1.markers[rats1.markers$cluster == "Macrophage cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(macro15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-macro.txt", quote = F, sep = '\t')
+dim(macro15.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(macro15.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-macro-toGenes.txt", quote = F, sep = '\t')
+```
+
+In BASH, run the following command to obtain a bed file of the peaks:
+```{BASH, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/
+for i in gd15.5-endo.txt gd15.5-macro.txt gd15.5-nk.txt gd15.5-sm.txt; do e=`echo $i | sed 's/txt/bed/g'`; cut -f 6 $i | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > $e; done
+```
+We can look at the distribution of the cell type-enriched peaks. For natural killer cells (NKs):
+```{r}
+library(ChIPseeker)
+library(GenomicFeatures)
+library(RMariaDB)
+
+txdb <- makeTxDbFromEnsembl(organism= "Rattus norvegicus", release = 98)
+
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-nk.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - natural killer cells GD15.5")
+```
+Smooth muscle cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-sm.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - smooth muscle cells GD15.5")
+```
+Endothelial cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-endo.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - Endothelial cells GD15.5")
+```
+Macrophage cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-macro.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - Macrophage cells GD15.5")
+```
+
+
+## GD 19.5:
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+rats1.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-unfilteredMarkers.txt", header = T, sep = "\t")
+```
+Natural killer cells:
+```{r}
+nk19.5 <- rats1.markers[rats1.markers$cluster == "Natural killer cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(nk19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-nk.txt", quote = F, sep = '\t')
+dim(nk19.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(nk19.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-nk-toGenes.txt", quote = F, sep = '\t')
+```
+Smooth muscle cells:
+```{r}
+sm19.5 <- rats1.markers[rats1.markers$cluster == "Smooth muscle cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(sm19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-sm.txt", quote = F, sep = '\t')
+dim(sm19.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(sm19.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-sm-toGenes.txt", quote = F, sep = '\t')
+```
+Endothelial cells:
+```{r}
+endo19.5 <- rats1.markers[rats1.markers$cluster == "Endothelial cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(endo19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-endo.txt", quote = F, sep = '\t')
+dim(endo19.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(endo19.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-endo-toGenes.txt", quote = F, sep = '\t')
+```
+Macrophage cells:
+```{r}
+macro19.5 <- rats1.markers[rats1.markers$cluster == "Macrophage cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
+write.table(macro19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-macro.txt", quote = F, sep = '\t')
+dim(macro19.5)
+
+closest_genes <- ClosestFeature(rats, regions = rownames(macro19.5))
+write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-macro-toGenes.txt", quote = F, sep = '\t')
+```
+
+In BASH, run the following command to obtain a bed file of the TBC peaks:
+```{BASH, eval = F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/
+for i in gd19.5-endo.txt gd19.5-macro.txt gd19.5-nk.txt gd19.5-sm.txt; do e=`echo $i | sed 's/txt/bed/g'`; cut -f 8 $i | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > $e; done
+```
+We can look at the distribution of the cell type-enriched peaks. For natural killer cells (NKs):
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-nk.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - natural killer cells GD19.5")
+```
+Smooth muscle cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-sm.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - smooth muscle cells GD19.5")
+```
+Endothelial cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-endo.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - Endothelial cells GD19.5")
+```
+Macrophage cells:
+```{r}
+file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-macro.bed"
+peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+
+plotDistToTSS(peakAnno,
+              title="Distribution of transcription factor-binding loci relative to TSS - Macrophage cells GD19.5")
+```
+
+```{r}
+sessionInfo()
+```

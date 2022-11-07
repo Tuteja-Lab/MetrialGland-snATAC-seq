@@ -1,0 +1,238 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+```{r}
+library(Signac)
+library(Seurat)
+library(JASPAR2020)
+library(TFBSTools)
+library(dplyr)
+library(ggplot2)
+
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T)
+motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
+motifPeaks <- inner_join(motifPeaks, motifs19.5[,c("motif", "motif.name")], by = c("motif" = "motif"))
+jaspar <- read.table("/work/LAS/geetu-lab/hhvu/JASPAR-library.txt", header = T, sep = "\t")
+motifPeaks <- inner_join(motifPeaks, jaspar, by = c("motif" = "ID"))
+
+
+subColon <- function(x) {
+  ifelse(grepl("::", x, ignore.case = TRUE), strsplit(x, "::"), x)
+}
+
+keep <- motifPeaks$Family
+keep <- subColon(keep)
+for (i in 1:length(keep)) {
+  keep[i] <- list(unique(keep[i][[1]]))
+  for (j in setdiff(1:length(keep), which(keep %in% keep[i]))) {
+    if (sum(keep[j][[1]] %in% keep[i][[1]]) > 0) {
+      keep[j] <- keep[i]
+    }
+  }
+}
+keep2 <- unlist(lapply(keep, toString))
+motifPeaks$Family2 <- keep2
+
+
+motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
+
+for (type in unique(motifs19.5$type)) {
+  sub <- motifs19.5[motifs19.5$type == type,]
+  if (type == "human") {
+    load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithHumanPFM.rda")
+  } else {
+    load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithMousePFM.rda")
+  }
+#  for (motif in unique(sub$motif)) {
+#    write.table(rats@motifs@positions[[motif]],
+#                paste0("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/", motif, "-", rats@motifs@motif.names[[motif]], "-bindingSites.txt"),
+#                quote = F, sep = "\t", row.names = F)
+#  }
+}
+```
+
+In Bash
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis
+for i in *bindingSites.txt; do tail -n +2 $i > temp; mv temp $i; done
+mkdir sitesInPeaks
+ml bedtools2
+
+cat MA0065.2* MA0677.1* MA1539.1* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/Thyroid-RXR.txt
+cat MA0840.1* MA0638.1* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/CREB.txt
+cat MA0524.2* MA0814.2* MA0815.1* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/AP2.txt
+cat MA1558.1* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/SNAI1.txt
+cat MA0830.2* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/TCF4.txt
+cat MA1126.1* MA1127.1* MA1129.1* MA1131.1* MA1133.1* MA1136.1* MA1139.1* MA1140.2* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/Fos-Jun.txt
+cat MA0144.2* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/STAT3.txt
+cat MA0144.2* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/STAT3.txt
+cat MA0465.2* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/HOX.txt
+cat MA1484.1* | sort -k1,1n -k2,2n | bedtools merge -i - | bedtools intersect -a - -b ../commonPeaks-gd19.5.bed -wa -wb > sitesInPeaks/ETS.txt
+```
+
+In R
+```{r}
+data <- data.frame(matrix(ncol=10, nrow=2))
+colnames(data) <- unique(motifPeaks$Family2)
+rownames(data) <- c(">=2BS", "1BS")
+
+#Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/Thyroid-RXR.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)`[1] <- q
+data$`Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)`[2] <- m-q
+
+
+#CREB-related factors
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/CREB.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`CREB-related factors`[1] <- q
+data$`CREB-related factors`[2] <- m-q
+
+
+#PAS domain factors
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/PAS.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`PAS domain factors`[1] <- q
+data$`PAS domain factors`[2] <- m-q
+
+#AP-2
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/AP2.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`AP-2`[1] <- q
+data$`AP-2`[2] <- m-q
+
+#More than 3 adjacent zinc finger factors  
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/SNAI1.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`More than 3 adjacent zinc finger factors`[1] <- q
+data$`More than 3 adjacent zinc finger factors`[2] <- m-q
+
+
+#E2A-related factors  MA0830.2
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/TCF4.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`E2A-related factors`[1] <- q
+data$`E2A-related factors`[2] <- m-q
+
+
+#Fos-related factors, Jun-related factors
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/Fos-Jun.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`Fos-related factors, Jun-related factors`[1] <- q
+data$`Fos-related factors, Jun-related factors`[2] <- m-q
+
+
+#STAT factors
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/STAT3.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`STAT factors`[1] <- q
+data$`STAT factors`[2] <- m-q
+
+
+#HOX-related factors           MA0465.2
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/HOX.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`HOX-related factors`[1] <- q
+data$`HOX-related factors`[2] <- m-q
+
+
+#Ets-related factors
+test <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/sitesInPeaks/ETS.txt", header = F)
+
+t <- as.data.frame(table(test$V7))
+
+m <- length(unique(test$V7)) #number of successes, ie having the motifs
+q <- length(t[t$Freq >= 2, "Var1"]) #number of observed successes
+binom.test(q, m, p = 0.5, alternative = "greater")
+
+data$`Ets-related factors`[1] <- q
+data$`Ets-related factors`[2] <- m-q
+
+data2 <- data.frame(matrix(nrow = 20, ncol=3))
+data2$X1 <- rep(colnames(data), 2)
+data2 <- data2[order(data2$X1),]
+data2$X2 <- rep(rownames(data), 10)
+for (i in colnames(data)) {
+  data2[data2$X1 == i, "X3"] <- data[,i]
+}
+
+# Get the stacked barplot
+ggplot(data2, aes(fill=X2, y=X1, x=X3)) + 
+  geom_bar(position="stack", stat="identity")
+```

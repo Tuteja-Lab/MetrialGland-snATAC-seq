@@ -1,0 +1,494 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+SPEARMAN TEST - ANY GENES (genes did not have to be markers)
+
+```{r}
+library("org.Rn.eg.db")
+library("clusterProfiler")
+
+go <- function(genes) {
+  GO <- enrichGO(gene = genes, OrgDb=org.Rn.eg.db, ont = "BP", pvalueCutoff = 0.05, qvalueCutoff = 0.05, maxGSSize=500, readable = T, keyType = "ENSEMBL")
+  goSimplify <- simplify(GO)
+  res <- as.data.frame(goSimplify)
+  #res$Rank <- seq(1, nrow(res))
+  res$GeneRatio <- sapply(strsplit(res$GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$BgRatio <- sapply(strsplit(res$BgRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$Fold <- as.numeric(res$GeneRatio)/as.numeric(res$BgRatio)
+  res <- res[res$qvalue <= 0.05 & res$Fold >= 2 & res$Count >= 5,]
+  
+  return(res)
+}
+```
+
+
+## GD 15.5:
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+
+exp <- AverageExpression(data)
+exp <- as.data.frame(exp$RNA)
+```
+
+Getting promoter peaks for both timepoints and all cell populations:
+```{BASH, eval=F}
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq
+module load bedtools2
+for i in gd*bed
+do
+e=`echo $i | sed 's/.bed/-Promoters.bed/g'`
+sed 's/chr//g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/rn6.promoters.bed | bedtools intersect -a $i -b - -wa -u > $e
+done
+```
+Normalize by peak length before normalizing by default in Seurat:
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+# first compute the length of each peak
+rats <- RegionStats(
+  object = rats,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6,
+  sep = c(":", "-")
+)
+
+# extract the width of each peak
+peak.width <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'meta.features')$sequence.length
+
+# extract the raw counts
+counts <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'counts')
+
+# divide the counts for each peak by the width of the peak
+norm.counts <- counts / peak.width
+
+# create a new assay with the normalized counts and perform the same processing 
+rats[['normPeaks']] <- CreateAssayObject(counts = norm.counts)
+DefaultAssay(rats) <- 'normPeaks'
+rats <- RunTFIDF(rats)
+rats <- FindTopFeatures(rats)
+rats <- RunSVD(rats, n = 50, reduction.key = 'LSI_', reduction.name = 'lsiNorm')
+rats <- RunUMAP(rats, dims = 2:20, reduction = 'lsiNorm', reduction.name = 'umapNorm')
+```
+
+Invasive trophoblast cells: <br>
+Correlation - remove non-TBC genes and genes not expressed (expression = 0), and only keep promoter peaks:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T)
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`23`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Natural killer cells: <br>
+Correlation:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-nk-toGenes.txt", sep = "\t")
+nk1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster6.txt", header = T)
+nk2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster9.txt", header = T)
+nk3 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster19.txt", header = T)
+marker <- unique(c(nk1$gene, nk2$gene, nk3$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-nk-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Natural killer cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("6", "9", "19")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Smooth muscle cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-sm-toGenes.txt", sep = "\t")
+sm1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster14.txt", header = T)
+sm2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster17.txt", header = T)
+sm3 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster26.txt", header = T)
+marker <- unique(c(sm1$gene, sm2$gene, sm3$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-sm-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Smooth muscle cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("14", "17", "26")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Macrophage cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-macro-toGenes.txt", sep = "\t")
+macro1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster7.txt", header = T)
+macro2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster8.txt", header = T)
+macro3 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster11.txt", header = T)
+marker <- unique(c(macro1$gene, macro2$gene, macro3$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-macro-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Macrophage cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("7", "8", "11")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Endothelial cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-endo-toGenes.txt", sep = "\t")
+endo1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster10.txt", header = T)
+endo2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster13.txt", header = T)
+endo3 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster15.txt", header = T)
+marker <- unique(c(endo1$gene, endo2$gene, endo3$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-endo-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Endothelial cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("10", "13", "15")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+
+## GD 19.5:
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+data2
+
+exp <- AverageExpression(data2)
+exp <- as.data.frame(exp$RNA)
+```
+Normalize by peak length before normalizing by default in Seurat:
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
+# first compute the length of each peak
+rats <- RegionStats(
+  object = rats,
+  genome = BSgenome.Rnorvegicus.Ensembl.rn6,
+  sep = c(":", "-")
+)
+
+# extract the width of each peak
+peak.width <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'meta.features')$sequence.length
+
+# extract the raw counts
+counts <- GetAssayData(rats, assay = 'MACSpeaks', slot = 'counts')
+
+# divide the counts for each peak by the width of the peak
+norm.counts <- counts / peak.width
+
+# create a new assay with the normalized counts and perform the same processing 
+rats[['normPeaks']] <- CreateAssayObject(counts = norm.counts)
+DefaultAssay(rats) <- 'normPeaks'
+rats <- RunTFIDF(rats)
+rats <- FindTopFeatures(rats)
+rats <- RunSVD(rats, n = 50, reduction.key = 'LSI_', reduction.name = 'lsiNorm')
+rats <- RunUMAP(rats, dims = 2:10, reduction = 'lsiNorm', reduction.name = 'umapNorm')
+```
+
+
+Invasive trophoblast cells: <br>
+Correlation - remove non-TBC genes and genes not expressed (expression = 0), and only keep promoter peaks:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", sep = "\t")
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster6.txt", header = T)
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Invasive trophoblast cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp$`6`)
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+t1 <- t1[t1$gene_name %in% marker$gene & t1$express > 0,]
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+Natural killer cells: <br>
+Correlation:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-nk-toGenes.txt", sep = "\t")
+nk1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster9.txt", header = T)
+marker <- unique(c(nk1$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-nk-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Natural killer cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=exp[,c("9")])
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Smooth muscle cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-sm-toGenes.txt", sep = "\t")
+sm1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster8.txt", header = T)
+sm2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster26.txt", header = T)
+marker <- unique(c(sm1$gene, sm2$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-sm-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Smooth muscle cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("8", "26")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+
+Macrophage cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-macro-toGenes.txt", sep = "\t")
+macro1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster1.txt", header = T)
+macro2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster7.txt", header = T)
+macro3 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster11.txt", header = T)
+macro4 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster17.txt", header = T)
+macro5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster18.txt", header = T)
+
+marker <- unique(c(macro1$gene, macro2$gene, macro3$gene, macro4$gene, macro5$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-macro-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Macrophage cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("1", "7", "11", "17", "18")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+
+Endothelial cells:
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-endo-toGenes.txt", sep = "\t")
+endo1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster10.txt", header = T)
+endo2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster20.txt", header = T)
+marker <- unique(c(endo1$gene, endo2$gene))
+
+proPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-endo-Promoters.bed", header = F)
+dim(proPeak)
+
+pileup <- AverageExpression(rats, "normPeaks")
+pileup <- pileup$normPeaks
+
+pileup2 <- as.data.frame(pileup[closest_genes$query_region,])
+pileup3 <- data.frame(regions=as.character(rownames(pileup2)), access=as.numeric(pileup2$`Endothelial cells`))
+
+exp3 <- data.frame(genes=rownames(exp), express=rowMeans(exp[,c("10", "20")]))
+t1 <- dplyr::left_join(closest_genes[,c("gene_name", "query_region")], exp3, by = c("gene_name" = "genes"))
+t1 <- dplyr::left_join(t1, pileup3, by = c("query_region" = "regions"))
+t1$express <- ifelse(is.na(t1$express) == TRUE, 0, t1$express)
+
+t1 <- t1[t1$query_region %in% proPeak$V4,]
+
+print("Correlation:")
+cor.test(t1$express, t1$access, method = "spearman", alternative = "two.sided")
+
+print("Number of peaks kept for correlation:")
+length(unique(t1$query_region))
+
+print("Number of genes kept for correlation:")
+length(unique(t1$gene_name))
+```
+

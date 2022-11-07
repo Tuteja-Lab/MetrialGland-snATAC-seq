@@ -33,24 +33,34 @@ cut -f1-4 commonPeaks.bed | sort -u > commonPeaks-gd15.5.bed
 cut -f5-8 commonPeaks.bed | sort -u > commonPeaks-gd19.5.bed
 ```
 
-From hereafter, we will be using GD19.5 coordinates of the common peaks for downstream analyses. <br>
 
-The distribution of the common peaks in the genome using GD19.5 coordinates:
-```{r}
-library(ChIPseeker)
-library(GenomicFeatures)
-library(RMariaDB) #remember to module load mariadb/10.1.23-py2-mpich-qfxutlj
+## GO analysis of peaks
+Timepoint-unique peaks are peaks at each timepoint that are not in the common set.
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks
 
-txdb <- makeTxDbFromEnsembl(organism= "Rattus norvegicus", release = 98)
+sed 's/^/chr/g' gd15.5-tbc.bed | bedtools intersect -a - -b commonPeaks-gd15.5.bed -v > gd15.5uniq.bed
+bedtools intersect -a gd19.5-tbc.bed -b commonPeaks-gd19.5.bed -v | sed 's/^/chr/g' > gd19.5uniq.bed
 
-file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5.bed"
-peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
+wc -l *uniq.bed
+  2600 gd15.5uniq.bed
+   791 gd19.5uniq.bed
 
-plotDistToTSS(peakAnno,
-              title="Distribution of transcription factor-binding loci relative to TSS")
+wc -l gd1*.5uniq-hg38Coor.bed
+  1792 gd15.5uniq-hg38Coor.bed
+   548 gd19.5uniq-hg38Coor.bed
+```
+Convert the coordinates from rat to human, then see how many of the peaks are in EVT
+```
+sed 's/chr//g' gd15.5uniq-hg38Coor.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u > gd15.5uniq-hg38Coor-inEVT.bed
+sed 's/chr//g' gd19.5uniq-hg38Coor.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u > gd19.5uniq-hg38Coor-inEVT.bed
+
+wc -l gd1*.5uniq-hg38Coor-inEVT.bed
+  459 gd15.5uniq-hg38Coor-inEVT.bed
+  128 gd19.5uniq-hg38Coor-inEVT.bed
 ```
 
-Using GD19.5 coordinates, associate the common peaks to the nearest genes, then run GO analysis.
+Associate the peaks to the nearest genes, then run GO analysis.
 ```{r}
 library(Signac)
 library(Seurat)
@@ -77,20 +87,93 @@ go <- function(genes) {
 }
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd15.5uniq-hg38Coor-inEVT.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+r15.5 <- go(closest_genes$ensembl_gene_id)
+r15.5
+#write.table(r15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd15.5uniq-hg38Coor-inEVT-go.txt", sep = "\t", row.names = F, quote = F)
+```
+
+```{r}
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd15.5uniq.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+r15.5uniqAll <- go(closest_genes$ensembl_gene_id)
+r15.5uniqAll
+write.table(r15.5uniqAll, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd15.5uniqAll-go.txt", sep = "\t", row.names = F, quote = F)
+```
+
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
 Annotation(rats) <- rnor6.ranges
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd19.5uniq-hg38Coor-inEVT.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+r19.5 <- go(closest_genes$ensembl_gene_id)
+r19.5
+write.table(r19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/gd19.5uniq-hg38Coor-inEVT-go.txt", sep = "\t", row.names = F, quote = F)
+```
+
+```{r}
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd19.5uniq.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+r19.5uniqAll <- go(closest_genes$ensembl_gene_id)
+r19.5uniqAll
+write.table(r19.5uniqAll, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/20220919_allPeaks/gd19.5uniqAll-go.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Using GD19.5 coordinates, associate the conserved common peaks to the nearest genes, then run GO analysis.
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+
 peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5.bed", header=F)
 closest_genes <- ClosestFeature(rats, regions = peaks$V4)
 
 r <- go(closest_genes$ensembl_gene_id)
 r
+write.table(r, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaks-gd19.5-go.txt", sep = "\t", row.names = F, quote = F)
+
+
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+r <- go(closest_genes$ensembl_gene_id)
+r
+write.table(r, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaks-gd19.5-go.txt", sep = "\t", row.names = F, quote = F)
+
+r <- r[r$Description %in% c("angiogenesis",
+                            "branching morphogenesis of an epithelial tube",
+                            "embryonic placenta development",
+                            "integrin-mediated signaling pathway",
+                            "regulation of cell-matrix adhesion"),]
+
+ggplot(data=r, aes(x=reorder(Description, -log10(as.numeric(qvalue))), y=-log10(as.numeric(qvalue)))) +
+  geom_bar(stat="identity", fill="#008837", width = 0.7) + coord_flip() +
+  labs(title = "Conserved common peaks",
+       y = "-log10(q-value)",
+       x = "") +
+  theme(plot.title = element_text(size = 25, face = "bold"), legend.text=element_text(size=25),
+        axis.text=element_text(size=25), axis.title.x = element_text(size = 25))
 ```
+
 Number of genes associated with the common peaks
 ```{r}
 length(unique(closest_genes$gene_name))
 ```
+
 
 ## Motif analysis:
 We carry out motif analysis with TF motifs from rat, mouse and human database. Firstly, run with rat TFs:
@@ -103,6 +186,8 @@ peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysi
 top.peaks <- unique(peaks$V8)
 
 open.peaks <- AccessiblePeaks(rats, assay = "MACSpeaks", min.cells = 1)
+
+rats <- RegionStats(rats[['MACSpeaks']], genome=BSgenome.Rnorvegicus.Ensembl.rn6)
 meta.feature <- GetAssayData(rats, assay = "MACSpeaks", slot = "meta.features")
 peaks.matched <- MatchRegionStats(meta.feature = meta.feature[open.peaks, ], query.feature = meta.feature[top.peaks, ], n = 50000, features.match = c("GC.percent", "sequence.length"))
 
@@ -112,7 +197,7 @@ motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = 
 motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
 motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
 rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
-rats <- RegionStats(rats[['MACSpeaks']], genome=BSgenome.Rnorvegicus.Ensembl.rn6)
+
 
 enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
 
@@ -164,6 +249,7 @@ human19.5 <- human19.5[human19.5$adj_pval <= 0.05 & human19.5$fold.enrichment >=
 human19.5$type <- "human"
 
 motifs19.5 <- rbind(rat19.5, mouse19.5, human19.5)
+write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/allMotifs-commonPeaksGD19.5coor.txt", sep = "\t", quote = F)
 ```
 
 Number of motifs
@@ -230,6 +316,7 @@ g2 <- rownames(exp19.5[rownames(exp19.5) %in% enriched2$TFgenes & exp19.5$`6` > 
 enriched2 <- enriched2[enriched2$TFgenes %in% g2,]
 
 motifs19.5 <- motifs19.5[motifs19.5$motif.name %in% enriched2$motif.name,]
+write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t", quote = F)
 ```
 
 Number of motifs retained
@@ -239,6 +326,7 @@ length(motifs19.5$motif)
 
 Find peaks that contain the enriched motifs of the expressed TFs. Since the types of the retained motifs were mouse and human, we will load the related objects only.
 ```{r}
+motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithMousePFM.rda")
 
 temp <- motifs19.5[motifs19.5$type == "mouse",]
@@ -261,6 +349,7 @@ for (i in 1:nrow(temp)) {
 }
 
 motifPeaks <- motifPeaks[!is.na(motifPeaks$motif),]
+write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
 ```
 
 Number of peaks that contained the retained motifs
@@ -268,12 +357,19 @@ Number of peaks that contained the retained motifs
 length(unique(motifPeaks$peak))
 ```
 
+
 ## Conserved common peak - conserved common gene networks:
 Build list of genes that are TBC markers at both gd15.5 and gd19.5 that are conserved in human EVT using scRNA-seq data, and these markers are also near to the common peaks.
 ```{r}
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T)
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes.txt", header = T)
 marker15.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T, sep = "\t")
 marker19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster6.txt", header = T, sep = "\t")
 markers <- intersect(intersect(marker15.5$gene, marker19.5$gene), closest_genes$gene_name)
+#r2 <- go(closest_genes[closest_genes$gene_name %in% markers, "ensembl_gene_id"])
+#r
+#write.table(r, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-go.txt", sep = "\t", row.names = F, quote = F)
+
 conservedRats <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedRat.txt", header = T, sep = "\t")
 
 markers <- markers[which(toupper(markers) %in% conservedRats$ratGenes == T)]
@@ -293,6 +389,7 @@ Find peaks with enriched motifs and are also conserved
 ```{r}
 conservedPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header = F)
 motifPeaks <- motifPeaks[motifPeaks$peak %in% conservedPeaks$V4,]
+#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
 ```
 
 Number of pekas with enriched motifs and are also conserved
@@ -343,8 +440,8 @@ all <- dplyr::distinct(all)
 
 g <- unique(all$X2)
 for (k in 1:length(g)) {
-  if (length(grep(g[k], all$X1)) != 0) {
-    all[which(g[k] == all$X2), "X2"] <- all[grep(g[k], all$X1)[1], "X1"]
+  if (length(grep(g[k], all$X1, ignore.case = TRUE)) != 0) {
+    all[which(g[k] == all$X2), "X2"] <- all[grep(g[k], all$X1, ignore.case = TRUE)[1], "X1"]
   }
 }
 all <- dplyr::distinct(all)
@@ -359,7 +456,11 @@ knitr::include_graphics("Files/conservedCommonPeaksGenes-gd19.5-network.PNG")
 
 Genes with most associated motifs:
 ```{r}
-sort(table(all$X2))[(length(table(all$X2))-5):length(table(all$X2))]
+sort(table(all$X2))[(length(table(all$X2))-10):length(table(all$X2))]
+```
+TFs with most genes:
+```{r}
+sort(table(all$X1))[(length(table(all$X1))-5):length(table(all$X1))]
 ```
 ```{r}
 knitr::include_graphics("Files/overlappingPeaks-motifs-TFAP2C-STAT3.PNG")
@@ -377,18 +478,33 @@ annotations <- suppressWarnings(GetGRangesFromEnsDb(ensdb = rnor6.ensDB))
 seqlevelsStyle(annotations) <- "Ensembl"
 Annotation(unintegrated) <- annotations
 
-
-cols <- c("#3e5d66", "#3e5d66")
+col <- c("#FF8080", "#D40000")
 
 cov_plot <- CoveragePlot( 
   object = unintegrated,
-  region = "1-12808761-12809434", #13928 from gene
-  feature = "Cited2",
+  region = "1-12808761-12809434", #13928 from gene, coaccess with 1-12821801-12824732 (promoter peak)
+  #feature = "Cited2",
   annotation = TRUE,
   peaks = TRUE,
   heights = c(6, 1, 1),
-  extend.upstream = 3000,
-  extend.downstream = 14500,
+  extend.upstream = 8000,
+  extend.downstream = 25000,
+  idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells"),
+)
+pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/figure4b-peakCited2.pdf", width = 8, height = 3)
+wrap_elements(cov_plot & scale_fill_manual(values = col) & xlab("Chromosome 1 position")) + ggtitle("Distal peak associated with Cited2") + theme(plot.title = element_text(size=18, face = "bold")) 
+dev.off()
+
+
+cov_plot <- CoveragePlot( 
+  object = unintegrated,
+  region = "3-170530891-170531337",
+  feature = "Tfap2c",
+  annotation = TRUE,
+  peaks = TRUE,
+  heights = c(6, 1, 1),
+  extend.upstream = 10000,
+  extend.downstream = 20000,
   idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells")
 )
 

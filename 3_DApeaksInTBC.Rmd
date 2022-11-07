@@ -23,7 +23,7 @@ knitr::opts_knit$set(width = 75)
 This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
 
 ## GD 15.5:
-```{r}
+```{r, eval=F}
 library(Signac)
 library(Seurat)
 library(ggplot2)
@@ -70,10 +70,10 @@ plotDistToTSS(peakAnno,
 ```
 
 ## GD 19.5:
-```{r}
+```{r, eval=F}
 set.seed(1234)
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/gd19.5-ATACwithRNAlables.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
 
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
@@ -102,5 +102,5 @@ plotDistToTSS(peakAnno,
 
 
 ```{r}
-ssessionInfo()
+sessionInfo()
 ```

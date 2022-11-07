@@ -11,7 +11,7 @@ knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
   fig.path = "Files/",
-  fig.width = 15,
+  fig.width = 7,
   prompt = FALSE,
   tidy = FALSE,
   message = FALSE,
@@ -58,7 +58,7 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/15.5_1-2-3-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/GD15.5/15.5_1-2-3-merged.rda")
 rats <- gd15.5combined
 Annotation(rats) <- rnor6.ranges
 gene.activities <- GeneActivity(rats)
@@ -79,6 +79,118 @@ plot1 + plot2
 #save(rats, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/gd15.5-ATACwithRNAlables.rda")
 
 table(rats$predicted.id)
+```
+
+Correlation check:
+```{r}
+library(Seurat)
+library(Signac)
+library(Seurat)
+library(S4Vectors)
+library(GenomicRanges)
+library(patchwork)
+library(biomaRt)
+library(ggplot2)
+library(ggpubr)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+avgATAC <- AverageExpression(rats, assays = "RNA")
+avgATAC <- as.data.frame(avgATAC)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+avgRNA <- AverageExpression(data, assays = "RNA")
+avgRNA <- as.data.frame(avgRNA)
+```
+
+Trophoblast:
+```{r}
+avgRNA1 <- avgRNA$RNA.23
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Invasive.trophoblast.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Invasive Trophoblast Cells at gd 15.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+
+Endothelial:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.10", "RNA.13", "RNA.15")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Endothelial.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(log10(avgRNA1+10^(-5)), log10(avgATAC1+10^(-5)), method = "spearman", exact = FALSE)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=FALSE) + ggtitle("Correlation in Endothelial Cells at gd 15.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+Macrophage:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.7", "RNA.8", "RNA.11")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Macrophage.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Macrophage Cells at gd 15.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+NK:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.6", "RNA.9", "RNA.19")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Natural.killer.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Natural Killer Cells at gd 15.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+Smooth muscle:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.14", "RNA.17", "RNA.26")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Smooth.muscle.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Smooth Muscle Cells at gd 15.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
 ```
 
 ## GD19.5:
@@ -104,7 +216,7 @@ Idents(data) <- factor(Idents(data), levels = c("Other cells", "Macrophage cells
                                                 "Endothelial cells", "Natural killer cells", "Invasive trophoblast cells"))
 rats.RNA <- data
 
-load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/19.5_4-5-6-merged.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/2_mergedSamples/2_MACS2Peaks/GD19.5/19.5_4-5-6-merged.rda")
 rats <- gd19.5combined
 Annotation(rats) <- rnor6.ranges
 gene.activities <- GeneActivity(rats)
@@ -127,6 +239,107 @@ plot1 + plot2
 table(rats$predicted.id)
 ```
 
+Correlation check:
+```{r}
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+avgATAC <- AverageExpression(rats, assays = "RNA")
+avgATAC <- as.data.frame(avgATAC)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+avgRNA <- AverageExpression(data2, assays = "RNA")
+avgRNA <- as.data.frame(avgRNA)
+```
+
+Trophoblast:
+```{r}
+avgRNA1 <- avgRNA$RNA.6
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Invasive.trophoblast.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho") + ggtitle("Correlation in Invasive Trophoblast Cells at gd 19.5")
+```
+
+Endothelial:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.10", "RNA.20")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Endothelial.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Endothelial Cells at gd 19.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+Macrophage:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.1", "RNA.7", "RNA.11", "RNA.17", "RNA.18")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Macrophage.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Macrophage Cells at gd 19.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+NK:
+```{r}
+avgRNA1 <- avgRNA[, c("RNA.9")]
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Natural.killer.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Natural Killer Cells at gd 19.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
+Smooth muscle:
+```{r}
+avgRNA1 <- rowMeans(avgRNA[, c("RNA.8", "RNA.26")])
+names(avgRNA1) <- rownames(avgRNA)
+
+avgATAC1 <- avgATAC[intersect(rownames(avgATAC), names(avgRNA1)), "RNA.Smooth.muscle.cells"]
+names(avgATAC1) <- intersect(rownames(avgATAC), names(avgRNA1))
+avgATAC1 <- avgATAC1[order(names(avgATAC1))]
+avgRNA1 <- avgRNA1[intersect(rownames(avgATAC), names(avgRNA1))]
+avgRNA1 <- avgRNA1[order(names(avgRNA1))]
+
+cor.test(avgRNA1, avgATAC1, method = "spearman", exact = F)
+
+df <- data.frame(avgRNA1=avgRNA1, avgATAC1=avgATAC1)
+
+ggplot(df, aes(x=log10(avgRNA1+10^(-5)), y=log10(avgATAC1+10^(-5)))) + geom_point(alpha = 1/10) + geom_smooth(method=lm, se=FALSE, fullrange=TRUE) + ggtitle("Correlation in Smooth Muscle Cells at gd 19.5") + stat_cor(method = "spearman", label.y = -4, cor.coef.name = "rho")
+```
 
 ```{r}
 sessionInfo()

@@ -1,0 +1,281 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+# TFAP2C
+Conserved common peaks:
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+ml bedtools2
+
+# common conserved peaks with motifs and overlapping with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor-inEVT.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | cut -f 4 | grep -wf - conservedCommonPeaksGD19.5withFinalMotifs.txt | grep -E "MA0524.2|MA0524.2|MA0814.2" | cut -f 2 | sort -u | wc -l
+#83
+
+# common conserved peaks with motifs
+grep -E "MA0524.2|MA0524.2|MA0814.2" conservedCommonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor-inEVT.bed | sed 's/^/chr/g' | wc -l
+#142
+
+# common conserved peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor-inEVT.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | wc -l
+#150
+
+# common conserved peaks
+wc -l commonPeaks-gd19.5-hg38Coor-inEVT.bed
+#264
+```
+Fisher's exact test
+```{r}
+dat <- data.frame(ChIP=c(83,150-83), noChIP=c(142-83,264-150-(142-83)))
+rownames(dat) <- c("motifs", "noMotifs")
+dat
+fisher.test(dat, alternative = "greater")
+```
+
+Hypergeometric test
+```{r}
+q <- 83 - 1 #number of peaks with motif and ChIP
+m <- 150 #number of peaks with ChIP
+n <- 264 - m #number of failures, ie number of peaks without ChIP
+k <- 142 #number of draws, ie number of peaks with motifs
+phyper(q, m, n, k, lower.tail = FALSE, log.p = FALSE)
+```
+Randomization for conserved common peaks: <br>
+size = number of peaks with motifs <br>
+population = conserved peaks <br>
+count how many of the random sets have ChIP-seq peaks <br>
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand
+for i in {1..1000}
+do
+shuf -n 142 commonPeaks-gd19.5-hg38Coor-inEVT.bed > temp
+bedtools intersect -a temp -b ../extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | wc -l >> temp2.tfap2c
+done
+```
+```{r}
+library(ggplot2)
+t <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand/temp2.tfap2c", header = F)
+ggplot(t, aes(x=V1)) + geom_histogram() + geom_vline(aes(xintercept = 83))
+```
+
+Common peaks (may not be conserved):
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+ml bedtools2
+
+# common peaks with motifs and overlapping with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | cut -f 4 | grep -wf - commonPeaksGD19.5withFinalMotifs.txt | grep -E "MA0524.2|MA0524.2|MA0814.2" | cut -f 2 | sort -u | wc -l
+#208
+
+# common peaks with motifs
+grep -E "MA0524.2|MA0524.2|MA0814.2" commonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor.bed | sed 's/^/chr/g' | wc -l
+#439
+
+# common peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | wc -l
+#394
+
+# common peaks
+wc -l commonPeaks-gd19.5-hg38Coor.bed
+#911
+```
+
+```{r}
+dat <- data.frame(`Rat_peaks_overlapping_with_TFAP2C_ChIP-seq`=c(208,394-208), `Rat_peaks_not_overlapping_with_TFAP2C_ChIP-seq`=c(439-208,911-439-(394-208)))
+rownames(dat) <- c("Rat peaks with TFAP2C motifs", "Rat peaks without TFAP2C motifs")
+
+fisher.test(dat, alternative = "greater")
+
+x <- c()
+for (row in rownames(dat)) {
+  for (col in colnames(dat)) {
+    x <- rbind(x, matrix(rep(c(row, col), dat[row, col]), ncol = 2, byrow = TRUE))
+  }
+}
+df <- as.data.frame(x)
+colnames(df) <- c("HavingMotifs", "HavingChIP")
+
+
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+library(ggstatsplot)
+ggbarstats(
+  df, HavingMotifs, HavingChIP,
+  label = "counts",
+  results.subtitle = FALSE,
+  proportion.test=F,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+Hypergeometric test
+```{r}
+q <- 208 - 1 #number of peaks with motif and ChIP
+m <- 394 #number of peaks with ChIP
+n <- 911 - m #number of failures, ie number of peaks without ChIP
+k <- 439 #number of draws, ie number of peaks with motifs
+phyper(q, m, n, k, lower.tail = FALSE, log.p = FALSE)
+```
+
+# ETS2
+```
+# common conserved peaks with motifs and overlapping with ChIP
+grep MA1484.1 conservedCommonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor-inEVT.bed | sed 's/^/chr/g' | bedtools intersect -a - -b extraData/GSM3019332_dTSC_Ets2.peak-mm10toHg38 -wa -u | wc -l
+#16
+
+# common conserved peaks with motifs
+grep MA1484.1 conservedCommonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor-inEVT.bed | cut -f 4 | sort -u | wc -l
+#28
+
+# common conserved peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor-inEVT.bed | bedtools intersect -a - -b extraData/GSM3019332_dTSC_Ets2.peak-mm10toHg38 -wa -u | wc -l
+#142
+
+# common conserved peaks
+wc -l commonPeaks-gd19.5-hg38Coor-inEVT.bed
+#264
+```
+
+```{r}
+dat <- data.frame(ChIP=c(16, 142-16), noChIP=c(28-16, 264-142-(28-16)))
+rownames(dat) <- c("motifs", "noMotifs")
+dat
+fisher.test(dat, alternative = "greater")
+```
+
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand
+
+for i in {1..1000}
+do
+shuf -n 28 commonPeaks-gd19.5-hg38Coor-inEVT.bed > temp
+bedtools intersect -a temp -b ../extraData/GSM3019332_dTSC_Ets2.peak-mm10toHg38 -wa -u | wc -l >> temp2.ets2
+done
+```
+```{r}
+library(ggplot2)
+t <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand/temp2.ets2", header = F)
+ggplot(t, aes(x=V1)) + geom_histogram() + geom_vline(aes(xintercept = 16))
+```
+
+Common peaks (may not be conserved):
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+ml bedtools2
+
+# common peaks with motifs and overlapping with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019332_dTSC_Ets2.peak-mm10toHg38 -wa -u | cut -f 4 | grep -wf - commonPeaksGD19.5withFinalMotifs.txt | grep "MA1484.1" | cut -f 2 | sort -u | wc -l
+#43
+
+# common peaks with motifs
+grep "MA1484.1" commonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor.bed | sed 's/^/chr/g' | wc -l
+#96
+
+# common peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019332_dTSC_Ets2.peak-mm10toHg38 -wa -u | wc -l
+#372
+
+# common peaks
+wc -l commonPeaks-gd19.5-hg38Coor.bed
+#911
+```
+
+```{r}
+dat <- data.frame(ChIP=c(43,372-43), noChIP=c(96-43,911-96-(372-43)))
+rownames(dat) <- c("motifs", "noMotifs")
+dat
+fisher.test(dat, alternative = "greater")
+```
+
+# FOS-related motifs 
+```
+# common conserved peaks with motifs and overlapping with ChIP
+grep -E "MA1131.1|MA1126.1|MA1136.1|MA1127.1|MA1139.1|MA1129.1|MA1539.1" conservedCommonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor-inEVT.bed | sed 's/^/chr/g' | bedtools intersect -a - -b extraData/GSM3019346_dTSC_cFos.peak-mm10toHg38 -wa -u | wc -l
+#44
+
+# common conserved peaks with motifs
+grep -E "MA1131.1|MA1126.1|MA1136.1|MA1127.1|MA1139.1|MA1129.1|MA1539.1" conservedCommonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor-inEVT.bed | wc -l
+#76
+
+# common conserved peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor-inEVT.bed | bedtools intersect -a - -b extraData/GSM3019346_dTSC_cFos.peak-mm10toHg38 -wa -u | wc -l
+#130
+
+# common conserved peaks
+wc -l commonPeaks-gd19.5-hg38Coor-inEVT.bed
+#264
+```
+
+```{r}
+dat <- data.frame(ChIP=c(44, 76-44), noChIP=c(130-44, 264-130-(76-44)))
+rownames(dat) <- c("motifs", "noMotifs")
+dat
+fisher.test(dat, alternative = "greater")
+```
+
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand
+for i in {1..1000}
+do
+shuf -n 76 commonPeaks-gd19.5-hg38Coor-inEVT.bed > temp
+bedtools intersect -a temp -b ../extraData/GSM3019346_dTSC_cFos.peak-mm10toHg38 -wa -u | wc -l >> temp2.fos
+done
+```
+```{r}
+library(ggplot2)
+t <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/rand/temp2.fos", header = F)
+ggplot(t, aes(x=V1)) + geom_histogram() + geom_vline(aes(xintercept = 44))
+```
+
+Common peaks (may not be conserved):
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+ml bedtools2
+
+# common peaks with motifs and overlapping with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019346_dTSC_cFos.peak-mm10toHg38 -wa -u | cut -f 4 | grep -wf - commonPeaksGD19.5withFinalMotifs.txt | grep -E "MA1131.1|MA1126.1|MA1136.1|MA1127.1|MA1139.1|MA1129.1|MA1539.1" | cut -f 2 | sort -u | wc -l
+#105
+
+# common peaks with motifs
+grep -E "MA1131.1|MA1126.1|MA1136.1|MA1127.1|MA1139.1|MA1129.1|MA1539.1" commonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor.bed | sed 's/^/chr/g' | wc -l
+#263
+
+# common peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019346_dTSC_cFos.peak-mm10toHg38 -wa -u | wc -l
+#322
+
+# common peaks
+wc -l commonPeaks-gd19.5-hg38Coor.bed
+#911
+```
+
+```{r}
+dat <- data.frame(ChIP=c(105,322-105), noChIP=c(163-105,911-263-(322-105)))
+rownames(dat) <- c("motifs", "noMotifs")
+dat
+fisher.test(dat, alternative = "greater")
+```

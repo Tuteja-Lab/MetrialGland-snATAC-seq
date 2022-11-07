@@ -1,0 +1,311 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+```{r}
+library("org.Rn.eg.db")
+library("clusterProfiler")
+
+go <- function(genes) {
+  GO <- enrichGO(gene = genes, OrgDb=org.Rn.eg.db, ont = "BP", pvalueCutoff = 0.05, qvalueCutoff = 0.05, maxGSSize=500, readable = T, keyType = "ENSEMBL")
+  goSimplify <- simplify(GO)
+  res <- as.data.frame(goSimplify)
+  #res$Rank <- seq(1, nrow(res))
+  res$GeneRatio <- sapply(strsplit(res$GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$BgRatio <- sapply(strsplit(res$BgRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))
+  res$Fold <- as.numeric(res$GeneRatio)/as.numeric(res$BgRatio)
+  res <- res[res$qvalue <= 0.05 & res$Fold >= 2 & res$Count >= 3,]
+  
+  return(res)
+}
+```
+
+Here, focus on only TBC specific peaks.
+
+# gd 15.5
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(ggpubr)
+library(GenomicRanges)
+library(patchwork)
+library(dplyr)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+set.seed(1234)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+exp <- AverageExpression(data)
+exp <- as.data.frame(exp$RNA)
+avgRNA <- exp
+
+data <- RenameIdents(data, `0` = "Other cells", `1` = "Other cells",
+                     `2` = "Other cells", `3` = "Other cells", `4` = "Other cells",
+                     `5` = "Other cells", `6` = "Natural killer cells",
+                     `7` = "Macrophage cells", `8` = "Macrophage cells",
+                     `9` = "Other cells", `10` = "Endothelial cells",
+                     `11` = "Macrophage cells", `12` = "Other cells",
+                     `13` = "Endothelial cells", `14` = "Smooth muscle cells",
+                     `15` = "Endothelial cells", `16` = "Other cells",
+                     `17` = "Smooth muscle cells", `18` = "Other cells",
+                     `19` = "Natural killer cells", `20` = "Other cells",
+                     `21` = "Other cells", `22` = "Natural killer cells",
+                     `23` = "Invasive trophoblast cells", `24` = "Other cells",
+                     `25` = "Other cells", `26` = "Smooth muscle cells",
+                     `27` = "Other cells", `28` = "Other cells")
+Idents(data) <- gsub(pattern = " ", replacement = "_", x = Idents(data))
+Idents(data) <- factor(Idents(data), levels = c("Other_cells", "Macrophage_cells", "Smooth_muscle_cells",
+                                                "Endothelial_cells", "Natural_killer_cells", "Invasive_trophoblast_cells"))
+rats.RNA <- data
+exp2 <- AverageExpression(rats.RNA)
+exp2 <- as.data.frame(exp2$RNA)
+test <- exp2[c("Epas1", "Fabp5", "Ift43", "Myof", "Pam", "Plpp3", "RGD1308706"),]
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+avgATAC <- AverageExpression(rats, "MACSpeaks")
+avgATAC <- avgATAC$MACSpeaks
+```
+
+1. Distribution of number of peaks
+```{r}
+specificPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+
+t <- table(specificPeaks$gene_name)
+hist(t, breaks = seq(0, 9, 1))
+```
+Peaks with >= 3 peaks tend to be higher expressed:
+```{r}
+genes <- names(t[t >= 3])
+
+exp <- exp[order(rownames(exp)),]
+exp$gene <- rownames(exp)
+df <- exp[exp$gene %in% names(t), c("gene", "23")]
+colnames(df) <- c("gene", "value")
+df2 <- data.frame(gene = setdiff(names(t), df$gene), value = rep(0, length(setdiff(names(t), df$gene))))
+names(df2) <- colnames(df)
+df <- rbind(df, df2)
+
+df$category <- ifelse(df$gene %in% genes, ">= 3 peaks", "< 3 peaks")
+
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, TBC peaks all genes GD15.5")
+
+#Number of genes with >= 3 peaks
+length(genes)
+#Number of genes with < 3 peaks
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+How many markers from scRNA-seq are there in each gene group
+```{r}
+marker <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T)
+#Number of genes with >= 3 peaks and are also markers
+length(intersect(genes, marker$gene))
+#Percent genes with >= 3 peaks and are also markers
+print(paste0((length(intersect(genes, marker$gene))/length(genes))*100, "%"))
+#Number of genes with < 3 peaks and are also markers
+length(intersect(unique(df[df$category == "< 3 peaks", "gene"]), marker$gene))
+#Percent of genes with < 3 peaks and are also markers
+print(paste0((length(intersect(unique(df[df$category == "< 3 peaks", "gene"]), marker$gene))/length(unique(df[df$category == "< 3 peaks", "gene"])))*100, "%"))
+```
+
+Test if this is significant
+```{r}
+q <- length(intersect(genes, marker$gene)) - 1 #number of markers found
+m <- length(marker$gene) #number of successes aka markers
+n <- length(specificPeaks$gene_name) - m #number of failures, ie number of genes that are not markers
+k <- length(genes) #number of draws, ie number of genes with >= 3 peaks
+phyper(q, m, n, k, lower.tail = FALSE, log.p = FALSE)
+```
+
+Gene ontology of the two groups: no enrichment in group of genes with >= 3 peaks, interesting enrichment in group of genes with < 3 peaks (but could be because there are more genes with < 3 peaks). Randomly sampled matching number of genes did not give genes with < 3 peaks any interesting enrichment.
+```{r}
+goMore3 <- go(specificPeaks[specificPeaks$gene_name %in% genes, "ensembl_gene_id"])
+
+goLess3 <- go(specificPeaks[specificPeaks$gene_name %in% unique(df[df$category == "< 3 peaks", "gene"]), "ensembl_gene_id"])
+head(goLess3$Description)
+
+set.seed(1234)
+temp <- sample(unique(df[df$category == "< 3 peaks", "gene"]), length(genes))
+goLess3rand <- go(specificPeaks[specificPeaks$gene_name %in% temp, "ensembl_gene_id"])
+head(goLess3rand$Description)
+```
+
+Genes with >= 3 peaks, how many of them are markers:
+```{r}
+t2 <- t[t >= 3]
+#Top 10 genes with most number of peaks")
+t2[order(t2)[(length(t2)-10):length(t2)]]
+#Number of genes with >= 3 peaks
+length(t2)
+#Number of genes with >= 3 peaks that are markers
+length(intersect(names(t2), marker$gene))
+#What genes with >= 3 peaks are not markers and could be novel
+length(setdiff(names(t2), marker$gene))
+#Distribution of expression of genes with >= 3 peaks are not markers and could be novel
+t3 <- exp[setdiff(names(t2), marker$gene), c("23", "gene")]
+t3[is.na(t3$`23`), "23"] <- 0
+t3[is.na(t3$gene), "gene"] <- setdiff(setdiff(names(t2), marker$gene), rownames(exp))
+quantile(t3$`23`)
+#Genes with >= 3 peaks are not markers and highly expressed (expression > 1)
+t3[t3$`23` > 1,]
+
+
+t2 <- exp[names(t2), c("23", "gene")]
+t2[is.na(t2$`23`), "23"] <- 0
+t2[is.na(t2$gene), "gene"] <- setdiff(t2$gene, rownames(exp))
+t2 <- inner_join(t2, specificPeaks, by = c("gene" = "gene_name"))
+t2$marker <- ifelse(t2$gene %in% marker$gene, "1", "0")
+write.table(t2, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-genewithMore3peaks.txt", sep = "\t", quote = F, row.names = F)
+```
+Number of peaks associated with Prl genes:
+```{r}
+t[grep("Prl", names(t))]
+```
+Peaks related to Prl, Prl4a1, Prl5a1 and Prl7d1:
+```{r}
+specificPeaks[specificPeaks$gene_name %in% c("Prl", "Prl4a1", "Prl5a1", "Prl7d1"),]
+```
+
+Plotting peaks around genes
+```{r}
+library(ensembldb)
+library(biovizBase)
+library(EnsDb.Rnorvegicus.v98)
+library(AnnotationHub)
+library(AnnotationForge)
+
+annotations <- suppressWarnings(GetGRangesFromEnsDb(ensdb = EnsDb.Rnorvegicus.v98))
+annotations <- subset(annotations, gene_biotype=="protein_coding")
+seqlevelsStyle(annotations) <- "Ensembl"
+Annotation(rats) <- annotations
+
+cols <- c("orange3", "#718748", "#183D61", "#79704C", "red3")
+
+cov_plot <- CoveragePlot( 
+  object = rats,
+  region = "17-38710432-38718317",
+  feature = "Prl4a1",
+  annotation = T,
+  peaks = TRUE,
+  heights = c(6, 2, 2),
+  extend.upstream = 20000,
+  extend.downstream = 20000,
+  idents = c("Natural killer cells", "Endothelial cells", "Macrophage cells",         
+             "Smooth muscle cells", "Invasive trophoblast cells")
+)
+wrap_elements(cov_plot & scale_fill_manual(values = cols) & xlab("Chromosome 17 position")) + ggtitle("GD15.5 Prl4a1") + theme(plot.title = element_text(size=18, face = "bold")) 
+
+cov_plot <- CoveragePlot( 
+  object = rats,
+  region = "17-38323674-38330944",
+  feature = "Prl5a1",
+  annotation = T,
+  peaks = TRUE,
+  heights = c(6, 2, 2),
+  extend.upstream = 300000,
+  extend.downstream = 10000,
+  idents = c("Natural killer cells", "Endothelial cells", "Macrophage cells",         
+             "Smooth muscle cells", "Invasive trophoblast cells")
+)
+wrap_elements(cov_plot & scale_fill_manual(values = cols) & xlab("Chromosome 17 position")) + ggtitle("GD15.5 Prl5a1") + theme(plot.title = element_text(size=18, face = "bold")) 
+
+cov_plot <- CoveragePlot( 
+  object = rats,
+  region = "17-39814244-39824299",
+  feature = "Prl",
+  annotation = T,
+  peaks = TRUE,
+  heights = c(6, 2, 2),
+  extend.upstream = 10000,
+  extend.downstream = 300000,
+  idents = c("Natural killer cells", "Endothelial cells", "Macrophage cells",         
+             "Smooth muscle cells", "Invasive trophoblast cells")
+)
+wrap_elements(cov_plot & scale_fill_manual(values = cols) & xlab("Chromosome 17 position")) + ggtitle("GD15.5 Prl") + theme(plot.title = element_text(size=18, face = "bold")) 
+
+cov_plot <- CoveragePlot( 
+  object = rats,
+  region = "17-38929045-38999652",
+  feature = "Prl7d1",
+  annotation = T,
+  peaks = TRUE,
+  heights = c(6, 2, 2),
+  extend.upstream = 10000,
+  extend.downstream = 10000,
+  idents = c("Natural killer cells", "Endothelial cells", "Macrophage cells",         
+             "Smooth muscle cells", "Invasive trophoblast cells")
+)
+wrap_elements(cov_plot & scale_fill_manual(values = cols) & xlab("Chromosome 17 position")) + ggtitle("GD15.5 Prl7d1") + theme(plot.title = element_text(size=18, face = "bold")) 
+```
+
+Genes in EVT
+```{r}
+library(stringr)
+geneToPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/EVT_GREAT/EVT_genesToPeaks.txt", header = F, sep = "\t", fill = T, stringsAsFactors = F, quote = "")
+geneToPeak$noPeaks <- str_count(geneToPeak$V2, "EVT_peaks")
+quantile(geneToPeak$noPeaks)
+```
+
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+closest_genes$gene_name <- toupper(closest_genes$gene_name)
+
+load(file = "/work/LAS/geetu-lab/hhvu/combine-test-expression1.Rdata")
+ratHumanOrthologs <- dataset$GRCH38$ratHumanOrthologs
+closest_genes2 <- inner_join(closest_genes, ratHumanOrthologs[,c(2,4)], by = c("gene_name" = "Gene.name"))
+t <- table(closest_genes2$Human.gene.name)
+t <- as.data.frame(t)
+t$Var1 <- toupper(t$Var1)
+
+geneToPeak3 <- geneToPeak[geneToPeak$V1 %in% closest_genes2$Human.gene.name,]
+geneToPeak3 <- inner_join(geneToPeak3, t, by = c("V1" = "Var1"))
+geneToPeak3$category <- ifelse(geneToPeak3$Freq >= 3, ">= 3 rats", "< 3 rats")
+wilcox.test(geneToPeak3[geneToPeak3$category == ">= 3 rats", "noPeaks"], geneToPeak3[geneToPeak3$category == "< 3 rats", "noPeaks"])
+
+ggplot(geneToPeak3, aes(x=category, y=noPeaks)) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD15.5")
+
+s <- geneToPeak3[,1:4]
+colnames(s) <- c("humanGene", "EVTpeaks", "noEVTpeaks", "noRatPeaks")
+#write.table(s, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/EVT_GREAT/gd15.5EVTgenesWithRatPeaks.txt", sep = "\t", quote = F, row.names = F)
+```
+```{r}
+humanOrthologs <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/rat-humanOrthologs.txt", header = T, sep = "\t")
+humanOrthologs <- as.data.frame(apply(humanOrthologs, 2, toupper))
+
+t4 <- t3[t3$`23` > 1,]
+t4$gene <- toupper(t4$gene)
+t4 <- inner_join(t4, humanOrthologs, by = c("gene" = "Gene.name"))
+
+s[s$humanGene %in% t4$Gene.name.1,]
+```
+
+```{r}
+sessionInfo()
+```

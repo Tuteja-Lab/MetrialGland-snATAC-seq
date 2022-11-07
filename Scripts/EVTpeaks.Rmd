@@ -1,0 +1,262 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+  
+Load libraries
+```{r}
+library(stringr)
+library(dplyr)
+library(Seurat)
+library(Signac)
+library(Seurat)
+library(S4Vectors)
+library(GenomicRanges)
+library(patchwork)
+library(biomaRt)
+library(ggplot2)
+set.seed(1234)
+```
+
+Load EVT peaks to genes (but GREAT)
+```{r}
+geneToPeak <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/EVT_GREAT/EVT_genesToPeaks.txt", header = F, sep = "\t", fill = T, stringsAsFactors = F, quote = "")
+geneToPeak$noPeaks <- str_count(geneToPeak$V2, "EVT_peaks")
+quantile(geneToPeak$noPeaks)
+conservedRats <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedRat.txt", header = T)
+load(file = "/work/LAS/geetu-lab/hhvu/combine-test-expression1.Rdata")
+ratHumanOrthologs <- dataset$GRCH38$ratHumanOrthologs
+ratHumanOrthologs <- ratHumanOrthologs[ratHumanOrthologs$Gene.name %in% conservedRats$ratGenes,]
+geneToPeak2 <- geneToPeak[geneToPeak$V1 %in% ratHumanOrthologs$Human.gene.name,]
+temp <- data_frame(V1=setdiff(ratHumanOrthologs$Human.gene.name, geneToPeak2$V1), V2="none", noPeaks=0)
+geneToPeak2 <- rbind(geneToPeak2, temp)
+quantile(geneToPeak2$noPeaks)
+```
+
+Load GD15.5 expression
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+exp15.5 <- AverageExpression(data)
+exp15.5 <- as.data.frame(exp15.5$RNA)
+rownames(exp15.5) <- toupper(rownames(exp15.5))
+exp15.5 <- exp15.5[rownames(exp15.5) %in% conservedRats$ratGenes,]
+df <- as.data.frame(exp15.5[, c("23")])
+df$gene <- rownames(exp15.5)
+colnames(df) <- c("value", "gene")
+```
+
+# GD 15.5 expression (all genes)
+## gd 15.5, cut off number of peaks = 3
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 3,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 3 peaks", "< 3 peaks")
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD15.5")
+print("Number of genes with >= 3 peaks:")
+length(genes$V1)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+## gd 15.5, cut off number of peaks = 16
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 16,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 16 peaks", "< 16 peaks")
+wilcox.test(df[df$category == ">= 16 peaks", "value"], df[df$category == "< 16 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 16, invasive trophoblast GD15.5")
+print("Number of genes with >= 16 peaks:")
+length(genes$V1)
+print("Number of genes with < 16 peaks:")
+length(unique(df[df$category == "< 16 peaks", "gene"]))
+```
+
+# GD 15.5 expression (marker genes at GD15.5)
+## gd 15.5, cut off number of peaks = 3
+```{r}
+s1 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scRNA-seq-analysis/7_conserved/gd15.5-wilcoxin-cluster23-genes.txt", header = F)
+exp15.5 <- exp15.5[rownames(exp15.5) %in% toupper(s1$V1),]
+df <- as.data.frame(exp15.5[, c("23")])
+df$gene <- rownames(exp15.5)
+colnames(df) <- c("value", "gene")
+
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 3,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 3 peaks", "< 3 peaks")
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD15.5")
+print("Number of genes with >= 3 peaks:")
+length(genes$V1)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+## gd 15.5, cut off number of peaks = 16
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 16,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 16 peaks", "< 16 peaks")
+wilcox.test(df[df$category == ">= 16 peaks", "value"], df[df$category == "< 16 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 16, invasive trophoblast GD15.5")
+print("Number of genes with >= 16 peaks:")
+length(genes$V1)
+print("Number of genes with < 16 peaks:")
+length(unique(df[df$category == "< 16 peaks", "gene"]))
+```
+
+# GD 19.5 expression (all genes)
+
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+exp19.5 <- AverageExpression(data2)
+exp19.5 <- as.data.frame(exp19.5$RNA)
+rownames(exp19.5) <- toupper(rownames(exp19.5))
+exp19.5 <- exp19.5[rownames(exp19.5) %in% conservedRats$ratGenes,]
+df <- as.data.frame(exp19.5[, c("6")])
+df$gene <- rownames(exp19.5)
+colnames(df) <- c("value", "gene")
+```
+
+## gd 19.5, cut off number of peaks = 3
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 3,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 3 peaks", "< 3 peaks")
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD19.5")
+print("Number of genes with >= 3 peaks:")
+length(genes$V1)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+## gd 19.5, cut off number of peaks = 16
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 16,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 16 peaks", "< 16 peaks")
+wilcox.test(df[df$category == ">= 16 peaks", "value"], df[df$category == "< 16 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 16, invasive trophoblast GD19.5")
+print("Number of genes with >= 16 peaks:")
+length(genes$V1)
+print("Number of genes with < 16 peaks:")
+length(unique(df[df$category == "< 16 peaks", "gene"]))
+```
+
+## gd 19.5, cut off number of peaks = 20
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 20,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 20 peaks", "< 20 peaks")
+wilcox.test(df[df$category == ">= 20 peaks", "value"], df[df$category == "< 20 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 20, invasive trophoblast GD19.5")
+print("Number of genes with >= 20 peaks:")
+length(genes$V1)
+print("Number of genes with < 20 peaks:")
+length(unique(df[df$category == "< 20 peaks", "gene"]))
+```
+
+## gd 19.5, cut off number of peaks = 30
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 30,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 30 peaks", "< 30 peaks")
+wilcox.test(df[df$category == ">= 30 peaks", "value"], df[df$category == "< 30 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 30, invasive trophoblast GD19.5")
+print("Number of genes with >= 30 peaks:")
+length(genes$V1)
+print("Number of genes with < 30 peaks:")
+length(unique(df[df$category == "< 30 peaks", "gene"]))
+```
+
+# GD 19.5 expression (marker genes at GD19.5)
+## gd 19.5, cut off number of peaks = 3
+```{r}
+s2 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scRNA-seq-analysis/7_conserved/gd19.5-wilcoxin-cluster6-genes.txt", header = F)
+exp19.5 <- exp19.5[rownames(exp19.5) %in% toupper(s2$V1),]
+df <- as.data.frame(exp19.5[, c("6")])
+df$gene <- rownames(exp19.5)
+colnames(df) <- c("value", "gene")
+
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 3,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 3 peaks", "< 3 peaks")
+wilcox.test(df[df$category == ">= 3 peaks", "value"], df[df$category == "< 3 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD19.5")
+print("Number of genes with >= 3 peaks:")
+length(genes$V1)
+print("Number of genes with < 3 peaks:")
+length(unique(df[df$category == "< 3 peaks", "gene"]))
+```
+
+## gd 19.5, cut off number of peaks = 16
+```{r}
+genes <- geneToPeak2[geneToPeak2$noPeaks >= 16,]
+df$category <- ifelse(df$gene %in% genes$V1, ">= 16 peaks", "< 16 peaks")
+wilcox.test(df[df$category == ">= 16 peaks", "value"], df[df$category == "< 16 peaks", "value"])
+ggplot(df, aes(x=category, y=log10(value+10^(-5)))) + geom_boxplot() + ggtitle("Cutoff = 16, invasive trophoblast GD19.5")
+print("Number of genes with >= 16 peaks:")
+length(genes$V1)
+print("Number of genes with < 16 peaks:")
+length(unique(df[df$category == "< 16 peaks", "gene"]))
+```
+
+# Number of EVT peaks that the genes with >= 3 peaks in rat have:
+# gd 15.5
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", sep = "\t")
+closest_genes$gene_name <- toupper(closest_genes$gene_name)
+
+load(file = "/work/LAS/geetu-lab/hhvu/combine-test-expression1.Rdata")
+ratHumanOrthologs <- dataset$GRCH38$ratHumanOrthologs
+closest_genes2 <- inner_join(closest_genes, ratHumanOrthologs[,c(2,4)], by = c("gene_name" = "Gene.name"))
+t <- table(closest_genes2$Human.gene.name)
+t <- as.data.frame(t)
+t$Var1 <- toupper(t$Var1)
+
+geneToPeak3 <- geneToPeak[geneToPeak$V1 %in% closest_genes2$Human.gene.name,]
+geneToPeak3 <- inner_join(geneToPeak3, t, by = c("V1" = "Var1"))
+geneToPeak3$category <- ifelse(geneToPeak3$Freq >= 3, ">= 3 rats", "< 3 rats")
+wilcox.test(geneToPeak3[geneToPeak3$category == ">= 3 rats", "noPeaks"], geneToPeak3[geneToPeak3$category == "< 3 rats", "noPeaks"])
+
+ggplot(geneToPeak3, aes(x=category, y=noPeaks)) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD15.5")
+
+s <- geneToPeak3[,1:4]
+colnames(s) <- c("humanGene", "EVTpeaks", "noEVTpeaks", "noRatPeaks")
+write.table(s, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/EVT_GREAT/gd15.5EVTgenesWithRatPeaks.txt", sep = "\t", quote = F, row.names = F)
+```
+
+# gd 19.5
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", sep = "\t")
+closest_genes$gene_name <- toupper(closest_genes$gene_name)
+
+load(file = "/work/LAS/geetu-lab/hhvu/combine-test-expression1.Rdata")
+ratHumanOrthologs <- dataset$GRCH38$ratHumanOrthologs
+closest_genes2 <- inner_join(closest_genes, ratHumanOrthologs[,c(2,4)], by = c("gene_name" = "Gene.name"))
+t <- table(closest_genes2$Human.gene.name)
+t <- as.data.frame(t)
+t$Var1 <- toupper(t$Var1)
+
+geneToPeak3 <- geneToPeak[geneToPeak$V1 %in% closest_genes2$Human.gene.name,]
+geneToPeak3 <- inner_join(geneToPeak3, t, by = c("V1" = "Var1"))
+geneToPeak3$category <- ifelse(geneToPeak3$Freq >= 3, ">= 3 rats", "< 3 rats")
+wilcox.test(geneToPeak3[geneToPeak3$category == ">= 3 rats", "noPeaks"], geneToPeak3[geneToPeak3$category == "< 3 rats", "noPeaks"])
+
+ggplot(geneToPeak3, aes(x=category, y=noPeaks)) + geom_boxplot() + ggtitle("Cutoff = 3, invasive trophoblast GD19.5")
+
+s <- geneToPeak3[,1:4]
+colnames(s) <- c("humanGene", "EVTpeaks", "noEVTpeaks", "noRatPeaks")
+write.table(s, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/EVT_GREAT/gd19.5EVTgenesWithRatPeaks.txt", sep = "\t", quote = F, row.names = F)
+```
