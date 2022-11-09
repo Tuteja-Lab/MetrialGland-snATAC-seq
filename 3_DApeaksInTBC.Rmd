@@ -23,7 +23,7 @@ knitr::opts_knit$set(width = 75)
 This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
 
 ## GD 15.5:
-```{r, eval=F}
+```{r}
 library(Signac)
 library(Seurat)
 library(ggplot2)
@@ -39,19 +39,23 @@ load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegrat
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
 Annotation(rats) <- rnor6.ranges
-
+```
+```{r,eval=F}
 rats1.markers <- FindAllMarkers(rats, test.use = "LR", latent.vars = 'peak_region_fragments')
-write.table(rats1.markers, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-unfilteredMarkers.txt", quote = F, sep = '\t')
-
+#write.table(rats1.markers, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-unfilteredMarkers.txt", quote = F, sep = '\t')
+```
+```{r}
+rats1.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-unfilteredMarkers.txt", header = T, sep = "\t")
 tbc15.5 <- rats1.markers[rats1.markers$cluster == "Invasive trophoblast cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
-write.table(tbc15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.txt", quote = F, sep = '\t')
+#write.table(tbc15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.txt", quote = F, sep = '\t')
 dim(tbc15.5)
 
 closest_genes <- ClosestFeature(rats, regions = rownames(tbc15.5))
-write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", quote = F, sep = '\t')
+length(unique(closest_genes$gene_name))
+#write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc-toGenes.txt", quote = F, sep = '\t')
 ```
 In BASH, run the following command to obtain a bed file of the TBC peaks:
-```{BASH, eval = F}
+```
 cut -f 8 gd15.5-tbc.txt | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > gd15.5-tbc.bed
 ```
 We can look at the distribution of the TBC-enriched peaks:
@@ -65,12 +69,14 @@ txdb <- makeTxDbFromEnsembl(organism= "Rattus norvegicus", release = 98)
 file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.bed"
 peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
 
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/figureS3-15.5-tbc.#pdf", height = 5, width = 6)
 plotDistToTSS(peakAnno,
               title="Distribution of transcription factor-binding loci relative to TSS")
+#dev.off()
 ```
 
 ## GD 19.5:
-```{r, eval=F}
+```{r}
 set.seed(1234)
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
@@ -78,26 +84,33 @@ load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegrat
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
 Annotation(rats) <- rnor6.ranges
-
+```
+```{r, eval=F}
 rats1.markers <- FindAllMarkers(rats, test.use = "LR", latent.vars = 'peak_region_fragments')
-write.table(rats1.markers, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-unfilteredMarkers.txt", quote = F, sep = '\t')
-
+#write.table(rats1.markers, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-unfilteredMarkers.txt", quote = F, sep = '\t')
+```
+```{r}
+rats1.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-unfilteredMarkers.txt", header = T, sep = "\t")
 tbc19.5 <- rats1.markers[rats1.markers$cluster == "Invasive trophoblast cells" & rats1.markers$avg_log2FC >= log2(1.5) & rats1.markers$p_val_adj <= 0.05,]
-write.table(tbc19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.txt", quote = F, sep = '\t')
+dim(tbc19.5)
+#write.table(tbc19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.txt", quote = F, sep = '\t')
 
 closest_genes <- ClosestFeature(rats, regions = rownames(tbc19.5))
-write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", quote = F, sep = '\t')
+length(unique(closest_genes$gene_name))
+#write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc-toGenes.txt", quote = F, sep = '\t')
 ```
 In BASH:
-```{BASH, eval = F}
+```
 cut -f 1 gd19.5-tbc.txt | tail -n +2 | sed 's/-/\t/g' | awk '{print $1"\t"$2"\t"$3"\t"$1"-"$2"-"$3}' > gd19.5-tbc.bed
 ```
 ```{r}
 file <- "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.bed"
 peakAnno <- annotatePeak(file, tssRegion=c(-3000, 3000), TxDb=txdb)
 
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/figureS3-19.5-tbc.#pdf", height = 5, width = 6)
 plotDistToTSS(peakAnno,
               title="Distribution of transcription factor-binding loci relative to TSS")
+#dev.off()
 ```
 
 

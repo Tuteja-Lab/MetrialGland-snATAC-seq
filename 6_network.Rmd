@@ -1,0 +1,175 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+  
+## Conserved common peak - conserved common gene networks:
+Build list of genes that are TBC markers at both gd15.5 and gd19.5 that are conserved in human EVT using scRNA-seq data, and these markers are also near to the common peaks.
+```{r}
+library(dplyr)
+
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes.txt", header = T, sep = "\t")
+marker15.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5-wilcoxin-cluster23.txt", header = T, sep = "\t")
+marker19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-wilcoxin-cluster6.txt", header = T, sep = "\t")
+markers <- intersect(intersect(marker15.5$gene, marker19.5$gene), closest_genes$gene_name)
+
+conservedRats <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedRat.txt", header = T, sep = "\t")
+
+markers <- markers[which(toupper(markers) %in% conservedRats$ratGenes == T)]
+
+length(markers)
+```
+
+Convert common peaks (gd19.5 coordinates) to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+module load bedtools2
+sed -i 's/chr//g' commonPeaks-gd19.5-hg38Coor.bed
+bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa | sort -u > commonPeaks-gd19.5-hg38Coor-inEVT.bed
+```
+
+Find peaks with enriched motifs and are also conserved
+```{r}
+motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T)
+conservedPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header = F)
+motifPeaks <- motifPeaks[motifPeaks$peak %in% conservedPeaks$V4,]
+#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Number of pekas with enriched motifs and are also conserved
+```{r}
+length(unique(motifPeaks$peak))
+```
+
+Associate peaks/motifs to genes
+```{r}
+network <- inner_join(closest_genes, motifPeaks, by = c("query_region" = "peak"))
+network <- inner_join(network, motifs19.5[,c("motif", "motif.name")], by = c("motif" = "motif"))
+network <- network[network$gene_name %in% markers,]
+dim(network)
+
+network <- distinct(network)
+
+#write.table(network, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGenes-gd19.5-motifLoc.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Grouping motifs of the same gene families together. Here if two families shared an element, I will also merge them together.
+```{r}
+subColon <- function(x) {
+  ifelse(grepl("::", x, ignore.case = TRUE), strsplit(x, "::"), x)
+}
+
+jaspar <- read.table("/work/LAS/geetu-lab/hhvu/JASPAR-library.txt", header = T, sep = "\t")
+jaspar <- jaspar[jaspar$ID %in% network$motif,]
+network <- inner_join(network, jaspar[,c("ID", "Family")], by = c("motif" = "ID"))
+keep <- network$Family
+keep <- subColon(keep)
+for (i in 1:length(keep)) {
+  keep[i] <- list(unique(keep[i][[1]]))
+  for (j in setdiff(1:length(keep), which(keep %in% keep[i]))) {
+    if (sum(keep[j][[1]] %in% keep[i][[1]]) > 0) {
+      keep[j] <- keep[i]
+    }
+  }
+}
+keep2 <- unlist(lapply(keep, toString))
+network$Family2 <- keep2
+
+all <- data.frame(tfGene=character(), regGene=character())
+for (i in unique(network$Family2)) {
+  tfGene <- unique(network[which(network$Family2 == i), "motif.name"])
+  tf <- toString(tfGene)
+  regGene <- unique(network[which(network$Family2 == i), "gene_name"])
+  tbl <- data.frame(matrix(nrow = length(tfGene)*length(regGene), ncol = 2))
+  for (j in 1:length(tfGene)) {
+    tbl[((j-1)*length(regGene)+1):(j*length(regGene)),1] <- tf
+    tbl[((j-1)*length(regGene)+1):(j*length(regGene)),2] <- as.character(regGene)
+  }
+  all <- rbind(all, tbl)
+}
+all$X2 <- toupper(all$X2)
+all <- dplyr::distinct(all)
+
+g <- unique(all$X2)
+for (k in 1:length(g)) {
+  if (length(grep(g[k], all$X1, ignore.case = T)) != 0) {
+    all[which(g[k] == all$X2), "X2"] <- all[grep(g[k], all$X1, ignore.case = T)[1], "X1"]
+  }
+}
+all <- dplyr::distinct(all)
+
+#write.table(all, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGenes-gd19.5.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Build network in Cytoscape.
+```{r}
+knitr::include_graphics("Files/conservedCommonPeaksGenes-gd19.5-network.PNG")
+```
+
+Genes with most associated motifs:
+```{r}
+sort(table(all$X2))[(length(table(all$X2))-10):length(table(all$X2))]
+```
+
+TFs with most genes:
+```{r}
+sort(table(all$X1))[(length(table(all$X1))-5):length(table(all$X1))]
+```
+
+
+```{r}
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+library(ensembldb)
+library(biovizBase)
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/unintegrated_2timepoints.rda")
+unintegrated <- RenameIdents(unintegrated, `GD15.5_TBC` = "GD15.5_Trophoblast_cells", `GD19.5_TBC` = "GD19.5_Trophoblast_cells")
+DefaultAssay(unintegrated) <- "MACSpeaks"
+file <- ensDbFromGtf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/Rattus_norvegicus.Rnor_6.0.98.gtf")
+rnor6.ensDB <- EnsDb(file)
+annotations <- suppressWarnings(GetGRangesFromEnsDb(ensdb = rnor6.ensDB))
+seqlevelsStyle(annotations) <- "Ensembl"
+Annotation(unintegrated) <- annotations
+
+col <- c("#FF8080", "#D40000")
+
+cov_plot <- CoveragePlot( 
+  object = unintegrated,
+  region = "1-12808761-12809434", #13928 from gene, coaccess with 1-12821801-12824732 (promoter peak)
+  #feature = "Cited2",
+  annotation = TRUE,
+  peaks = TRUE,
+  heights = c(6, 1, 1),
+  extend.upstream = 8000,
+  extend.downstream = 25000,
+  idents = c("GD15.5_Trophoblast_cells", "GD19.5_Trophoblast_cells"),
+)
+wrap_elements(cov_plot & scale_fill_manual(values = col) & xlab("Chromosome 1 position")) + ggtitle("Distal peak associated with Cited2") + theme(plot.title = element_text(size=18, face = "bold")) 
+```
+
+```{r}
+knitr::include_graphics("Files/overlappingPeaks-motifs-TFAP2C-STAT3.PNG")
+```
