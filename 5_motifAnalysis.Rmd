@@ -22,12 +22,22 @@ knitr::opts_knit$set(width = 75)
 
 This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
 
+Load libraries
+```{r}
+library(dplyr)
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(patchwork)
+set.seed(1234)
+```
+
+## Motif analysis:
 We first define common peaks to regions enriched in TBC cluster at GD15.5 and GD19.5 that overlap by at least 50\%. <br>
 ```
 module load bedtools2
-
 bedtools intersect -a /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.bed -f 0.5 -r -wa -wb > /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks.bed
-
 cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/
 cut -f1-4 commonPeaks.bed | sort -u > commonPeaks-gd15.5.bed
 cut -f5-8 commonPeaks.bed | sort -u > commonPeaks-gd19.5.bed
@@ -50,26 +60,19 @@ We carry out motif analysis with TF motifs from rat, mouse and human database. F
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
-
 peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks.bed", header=F)
 top.peaks <- unique(peaks$V8)
-
 open.peaks <- AccessiblePeaks(rats, assay = "MACSpeaks", min.cells = 1)
-
 rats <- RegionStats(rats[['MACSpeaks']], genome=BSgenome.Rnorvegicus.Ensembl.rn6)
 meta.feature <- GetAssayData(rats, assay = "MACSpeaks", slot = "meta.features")
 peaks.matched <- MatchRegionStats(meta.feature = meta.feature[open.peaks, ], query.feature = meta.feature[top.peaks, ], n = 50000, features.match = c("GC.percent", "sequence.length"))
-
 #rats
 pfm <- getMatrixSet(x = JASPAR2020, opts = list(species = "Rattus norvegicus", all_versions = FALSE))
 motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = BSgenome.Rnorvegicus.Ensembl.rn6, p.cutoff = 0.00005)
 motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
 motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
 rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
-
-
 enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
-
 #write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/common19.5-ratsMotifs.txt", quote=F)
 #save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithRatPFM.rda")
 ```
@@ -80,9 +83,7 @@ motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = 
 motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
 motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
 rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
-
 enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
-
 #write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/common19.5-mouseMotifs.txt", quote=F)
 #save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithMousePFM.rda")
 ```
@@ -93,14 +94,12 @@ motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = 
 motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
 motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
 rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
-
 enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
-
 #write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/common19.5-humanMotifs.txt", quote=F)
 #save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithHumanPFM.rda")
 ```
 
-Next, we compile the enriched motifs to one table.
+We compile the enriched motifs to one table.
 ```{r}
 rat19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/common19.5-ratsMotifs.txt", header = T)
 rat19.5$adj_pval <- p.adjust(rat19.5$pvalue, "BH")
@@ -118,7 +117,6 @@ human19.5 <- human19.5[human19.5$adj_pval <= 0.05 & human19.5$fold.enrichment >=
 human19.5$type <- "human"
 
 motifs19.5 <- rbind(rat19.5, mouse19.5, human19.5)
-#write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/allMotifs-commonPeaksGD19.5coor.txt", sep = "\t", quote = F)
 ```
 
 Number of motifs
@@ -126,7 +124,7 @@ Number of motifs
 length(motifs19.5$motif)
 ```
 
-Next, filter and keep only transcription factors (TFs) with enriched motifs and have expression levels > 1 at GD19.5.
+Next, filter and keep only transcription factors (TFs) with enriched motifs and have expression levels > 0.5 at both GD15.5 and GD19.5.
 ```{r}
 mouseOrthologs <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/rat-mouseOrthologs.txt", header = T, sep = "\t")
 mouseOrthologs <- as.data.frame(apply(mouseOrthologs, 2, toupper))
@@ -175,14 +173,32 @@ for (i in 1:nrow(enriched)) {
     enriched2 <- rbind(enriched2, temp2)
   }
 }
+enriched2 <- enriched2[!is.na(enriched2$motif),]
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
 exp19.5 <- AverageExpression(data2)
 exp19.5 <- as.data.frame(exp19.5$RNA)
 rownames(exp19.5) <- toupper(rownames(exp19.5))
-g2 <- rownames(exp19.5[rownames(exp19.5) %in% enriched2$TFgenes & exp19.5$`6` > 1,])
+exp19.5$gene <- rownames(exp19.5)
+g2 <- rownames(exp19.5[rownames(exp19.5) %in% enriched2$TFgenes & exp19.5$`6` > 0.5,])
+enriched2 <- left_join(enriched2, exp19.5[,c("gene", "6")], by = c("TFgenes" = "gene"))
+enriched2[is.na(enriched2$`6`), "6"] <- 0
 
-enriched2 <- enriched2[enriched2$TFgenes %in% g2,]
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
+exp15.5 <- AverageExpression(data)
+exp15.5 <- as.data.frame(exp15.5$RNA)
+rownames(exp15.5) <- toupper(rownames(exp15.5))
+exp15.5$gene <- rownames(exp15.5)
+enriched2 <- left_join(enriched2, exp15.5[,c("gene", "23")], by = c("TFgenes" = "gene"))
+enriched2[is.na(enriched2$`23`), "23"] <- 0
+
+temp <- left_join(motifs19.5, enriched2)
+#write.table(temp, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/tableS3_1.txt",  sep = "\t", quote = F, row.names = F)
+
+exp15.5 <- exp15.5[g2,]
+exp15.5 <- exp15.5[exp15.5$`23` > 0.5,]
+
+enriched2 <- enriched2[enriched2$TFgenes %in% rownames(exp15.5),]
 
 motifs19.5 <- motifs19.5[motifs19.5$motif.name %in% enriched2$motif.name,]
 #write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t", quote = F)
@@ -195,8 +211,6 @@ length(motifs19.5$motif)
 
 Find peaks that contain the enriched motifs of the expressed TFs. Since the types of the retained motifs were mouse and human, we will load the related objects only.
 ```{r}
-motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
-
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
@@ -204,7 +218,6 @@ DefaultAssay(rats) <- 'MACSpeaks'
 Annotation(rats) <- rnor6.ranges
 peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5.bed", header=F)
 closest_genes <- ClosestFeature(rats, regions = peaks$V4)
-#write.table(closest_genes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes.txt", sep = "\t", quote = F, row.names = F)
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/GD19.5_motifAnalysis/gd19.5_ATACwithMousePFM.rda")
 
@@ -228,6 +241,8 @@ for (i in 1:nrow(temp)) {
 }
 
 motifPeaks <- motifPeaks[!is.na(motifPeaks$motif),]
+motifPeaks$peak <- paste0("chr", motifPeaks$peak)
+motifPeaks$peak <- sub("-", ":", motifPeaks$peak)
 #write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
 ```
 
@@ -245,10 +260,6 @@ library(ComplexHeatmap)
 
 ###merge family
 toGenes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes.txt", header = T, sep = "\t")
-
-motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T)
-
-motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
 
 motifPeaks <- inner_join(motifPeaks, motifs19.5[,c("motif", "motif.name")], by = c("motif" = "motif"))
 
@@ -272,13 +283,13 @@ for (i in 1:length(keep)) {
 keep2 <- unlist(lapply(keep, toString))
 motifPeaks$Family2 <- keep2
 
-toGene <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes.txt", header = T)
-motifPeaks <- inner_join(motifPeaks, toGene, by = c("peak" = "query_region"))
+motifPeaks <- inner_join(motifPeaks, toGenes, by = c("peak" = "query_region"))
+#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/tableS3_2.txt",  sep = "\t", quote = F, row.names = F)
 ```
 Build a data frame for testing
 ```{r}
-df = data.frame(from = rep(unique(motifPeaks$Family2), times = 10),
-                to = rep(unique(motifPeaks$Family2), each = 10),
+df = data.frame(from = rep(unique(motifPeaks$Family2), times = 11),
+                to = rep(unique(motifPeaks$Family2), each = 11),
                 q = NA,
                 stringsAsFactors = FALSE)
 
@@ -316,13 +327,11 @@ df$q <- q #number of genes regulated by both families
 df <- df[df$from != df$to,]
 sig <- phyper(df$q, df$m, df$n, df$k, lower.tail = FALSE, log.p = FALSE)
 df$upper.adj.pval <- p.adjust(sig, "BH")
-sig <- phyper(df$q, df$m, df$n, df$k, lower.tail = TRUE, log.p = FALSE)
-df$lower.adj.pval <- p.adjust(sig, "BH")
 ```
 
 Build data frame for plotting
 ```{r}
-test <- data.frame(matrix(ncol=10, nrow=10))
+test <- data.frame(matrix(ncol=11, nrow=11))
 rownames(test) <- sort(unique(df$from))
 colnames(test) <- sort(unique(df$to))
 for (i in rownames(test)) {
@@ -337,38 +346,18 @@ for (i in rownames(test)) {
 test <- apply(test, 1, as.numeric)
 rownames(test) <- sort(unique(df$from))
 
-
-test2 <- data.frame(matrix(ncol=10, nrow=10))
-rownames(test2) <- sort(unique(df$from))
-colnames(test2) <- sort(unique(df$to))
-for (i in rownames(test2)) {
-  for (j in colnames(test2)) {
-    if (i != j) {
-      test2[i, j] <- df[df$from == i & df$to == j, "lower.adj.pval"] 
-    } else {
-      test2[i, j] <- NA
-    }
-  }
-}
-test2 <- apply(test2, 1, as.numeric)
-rownames(test2) <- sort(unique(df$from))
-test[lower.tri(test)] <- test2[lower.tri(test2)]
-
-test2 <- reshape2::melt(test)
-
 col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
-col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
 
 ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
              cluster_rows = FALSE, cluster_columns = FALSE,
              layer_fun = function(j, i, x, y, w, h, fill) {
                l = i > j
                grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col2(pindex(test, i[l], j[l])), col = NA))
+                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
                
                l = i < j
                grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
+                         gp = gpar(fill = "grey", col = NA))
                
                l = i == j
                grid.rect(x[l], y[l], w[l], h[l], 
@@ -379,9 +368,11 @@ ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
              })
 
 draw(ht, heatmap_legend_list = list(
-  Legend(title = "Over-representation", col_fun = col1),
-  Legend(title = "Under-representation", col_fun = col2)
+  Legend(title = "Over-representation", col_fun = col1)
+  #Legend(title = "Over-representation", col_fun = col1)
 ))
+
+keepForPlot <- test
 ```
 
 ## Shared locations
@@ -435,10 +426,8 @@ df2$n <- 1242 - df2$m #number of peaks without binding sites of family B
 
 sig <- phyper(df2$value, df2$m, df2$n, df2$k, lower.tail = FALSE, log.p = FALSE)
 df2$upper.adj.pval <- p.adjust(sig, "BH")
-sig <- phyper(df2$value, df2$m, df2$n, df2$k, lower.tail = TRUE, log.p = FALSE)
-df2$lower.adj.pval <- p.adjust(sig, "BH")
 
-test <- data.frame(matrix(ncol=10, nrow=10))
+test <- data.frame(matrix(ncol=11, nrow=11))
 rownames(test) <- sort(unique(df2$from))
 colnames(test) <- sort(unique(df2$to))
 for (i in rownames(test)) {
@@ -453,27 +442,8 @@ for (i in rownames(test)) {
 test <- apply(test, 1, as.numeric)
 rownames(test) <- sort(unique(df2$from))
 
-
-test2 <- data.frame(matrix(ncol=10, nrow=10))
-rownames(test2) <- sort(unique(df2$from))
-colnames(test2) <- sort(unique(df2$to))
-for (i in rownames(test2)) {
-  for (j in colnames(test2)) {
-    if (i != j) {
-      test2[i, j] <- df2[df2$from == i & df2$to == j, "lower.adj.pval"] 
-    } else {
-      test2[i, j] <- NA
-    }
-  }
-}
-test2 <- apply(test2, 1, as.numeric)
-rownames(test2) <- sort(unique(df2$from))
-test[lower.tri(test)] <- test2[lower.tri(test2)]
-
-test2 <- reshape2::melt(test)
-
 col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
-col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
+#col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
 
 # here reordering the symmetric matrix is necessary
 ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
@@ -481,11 +451,11 @@ ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
              layer_fun = function(j, i, x, y, w, h, fill) {
                l = i > j
                grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col2(pindex(test, i[l], j[l])), col = NA))
+                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
                
                l = i < j
                grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
+                         gp = gpar(fill = "grey", col = NA))
                
                l = i == j
                grid.rect(x[l], y[l], w[l], h[l], 
@@ -496,7 +466,54 @@ ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
              })
 
 draw(ht, heatmap_legend_list = list(
-  Legend(title = "Over-representation", col_fun = col1),
-  Legend(title = "Under-representation", col_fun = col2)
+  Legend(title = "Over-representation", col_fun = col1)
 ))
+```
+
+Combine two analyses in one plot
+```{r}
+test[upper.tri(test)] <- keepForPlot[upper.tri(keepForPlot)]
+
+col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
+
+ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
+             cluster_rows = FALSE, cluster_columns = FALSE,
+             layer_fun = function(j, i, x, y, w, h, fill) {
+               l = i > j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
+               
+               l = i < j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = col2(pindex(test, i[l], j[l])), col = NA))
+               
+               l = i == j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = "grey", col = NA))
+               
+               v = pindex(test, i, j)
+               grid.text(sprintf("%.3f", v), x, y, gp = gpar(fontsize = 15))
+             })
+
+pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/fig3b-heatmap-combined.pdf", width=12, height=10)
+draw(ht, heatmap_legend_list = list(
+  Legend(title = "Shared binding location representation", col_fun = col1),
+  Legend(title = "Shared gene representation", col_fun = col2)
+))
+dev.off()
+```
+
+Distribution of number of TF fams per peak
+```{r}
+test <- motifPeaks[,c("peak", "Family2")]
+test <- distinct(test)
+t <- as.data.frame(table(test$peak))
+
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/figure3c-famPerPeak.pdf", width = 5, height = 6)
+ggplot(t, aes(x = Freq)) + geom_histogram(bins = 8, fill = "#c6dbef", color="grey") +
+  scale_x_continuous(breaks=c(0:8)) +
+  stat_bin(aes(y=..count.., label=ifelse(..count..==0,"",..count..)), geom="text", vjust=-.5) +
+  theme_bw() +
+  ggtitle("Distribution of family number per peak")
+#dev.off()
 ```

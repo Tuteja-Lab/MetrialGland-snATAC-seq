@@ -39,21 +39,15 @@ markers <- markers[which(toupper(markers) %in% conservedRats$ratGenes == T)]
 length(markers)
 ```
 
-Convert common peaks (gd19.5 coordinates) to human coordinates using LiftOver, then find the regions that have ATAC-seq peaks in EVT. EVT peaks were obtained from https://www.medrxiv.org/content/10.1101/2022.05.25.22275520v1.full-text
-```
-cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
-module load bedtools2
-sed -i 's/chr//g' commonPeaks-gd19.5-hg38Coor.bed
-bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa | sort -u > commonPeaks-gd19.5-hg38Coor-inEVT.bed
-```
 
 Find peaks with enriched motifs and are also conserved
 ```{r}
 motifs19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", sep = "\t")
-motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T)
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", header = T, sep = "\t")
+motifPeaks$peak <- sub("chr", "", motifPeaks$peak)
+motifPeaks$peak <- sub(":", "-", motifPeaks$peak)
 conservedPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-hg38Coor-inEVT.bed", header = F)
 motifPeaks <- motifPeaks[motifPeaks$peak %in% conservedPeaks$V4,]
-#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
 ```
 
 Number of pekas with enriched motifs and are also conserved
@@ -70,7 +64,11 @@ dim(network)
 
 network <- distinct(network)
 
-#write.table(network, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGenes-gd19.5-motifLoc.txt", sep = "\t", row.names = F, quote = F)
+length(unique(network$gene_name))
+
+#network$query_region <- paste0("chr", network$query_region)
+#network$query_region <- sub("-", ":", network$query_region)
+#write.table(network, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/tableS4_1.txt", sep = "\t", row.names = F, quote = F)
 ```
 
 Grouping motifs of the same gene families together. Here if two families shared an element, I will also merge them together.
@@ -82,18 +80,20 @@ subColon <- function(x) {
 jaspar <- read.table("/work/LAS/geetu-lab/hhvu/JASPAR-library.txt", header = T, sep = "\t")
 jaspar <- jaspar[jaspar$ID %in% network$motif,]
 network <- inner_join(network, jaspar[,c("ID", "Family")], by = c("motif" = "ID"))
-keep <- network$Family
-keep <- subColon(keep)
-for (i in 1:length(keep)) {
-  keep[i] <- list(unique(keep[i][[1]]))
-  for (j in setdiff(1:length(keep), which(keep %in% keep[i]))) {
-    if (sum(keep[j][[1]] %in% keep[i][[1]]) > 0) {
-      keep[j] <- keep[i]
+network <- network[order(network$Family, decreasing = T),]
+keep_network <- network$Family
+keep_network <- subColon(keep_network)
+for (i in 1:length(keep_network)) {
+  keep_network[i] <- list(unique(keep_network[i][[1]]))
+  for (j in setdiff(1:length(keep_network), which(keep_network %in% keep_network[i]))) {
+    if (sum(keep_network[j][[1]] %in% keep_network[i][[1]]) > 0) {
+      keep_network[j] <- keep_network[i]
     }
   }
 }
-keep2 <- unlist(lapply(keep, toString))
-network$Family2 <- keep2
+keep2_network <- unlist(lapply(keep_network, toString))
+network$Family2 <- keep2_network
+network$Family2[grep("Jun|Fos", network$Family2, value = F)] <- "Jun-related factors, Fos-related factors"
 
 all <- data.frame(tfGene=character(), regGene=character())
 for (i in unique(network$Family2)) {
@@ -118,7 +118,7 @@ for (k in 1:length(g)) {
 }
 all <- dplyr::distinct(all)
 
-#write.table(all, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGenes-gd19.5.txt", sep = "\t", row.names = F, quote = F)
+write.table(all, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedCommonPeaksGenes-gd19.5.txt", sep = "\t", row.names = F, quote = F)
 ```
 
 Build network in Cytoscape.
