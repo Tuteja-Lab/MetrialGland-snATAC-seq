@@ -241,8 +241,8 @@ for (i in 1:nrow(temp)) {
 }
 
 motifPeaks <- motifPeaks[!is.na(motifPeaks$motif),]
-motifPeaks$peak <- paste0("chr", motifPeaks$peak)
-motifPeaks$peak <- sub("-", ":", motifPeaks$peak)
+#motifPeaks$peak <- paste0("chr", motifPeaks$peak)
+#motifPeaks$peak <- sub("-", ":", motifPeaks$peak)
 #write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
 ```
 
@@ -345,33 +345,6 @@ for (i in rownames(test)) {
 }
 test <- apply(test, 1, as.numeric)
 rownames(test) <- sort(unique(df$from))
-
-col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
-
-ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
-             cluster_rows = FALSE, cluster_columns = FALSE,
-             layer_fun = function(j, i, x, y, w, h, fill) {
-               l = i > j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
-               
-               l = i < j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = "grey", col = NA))
-               
-               l = i == j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = "grey", col = NA))
-               
-               v = pindex(test, i, j)
-               grid.text(sprintf("%.3f", v), x, y, gp = gpar(fontsize = 15))
-             })
-
-draw(ht, heatmap_legend_list = list(
-  Legend(title = "Over-representation", col_fun = col1)
-  #Legend(title = "Over-representation", col_fun = col1)
-))
-
 keepForPlot <- test
 ```
 
@@ -441,39 +414,12 @@ for (i in rownames(test)) {
 }
 test <- apply(test, 1, as.numeric)
 rownames(test) <- sort(unique(df2$from))
-
-col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
-#col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
-
-# here reordering the symmetric matrix is necessary
-ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
-             cluster_rows = FALSE, cluster_columns = FALSE,
-             layer_fun = function(j, i, x, y, w, h, fill) {
-               l = i > j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
-               
-               l = i < j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = "grey", col = NA))
-               
-               l = i == j
-               grid.rect(x[l], y[l], w[l], h[l], 
-                         gp = gpar(fill = "grey", col = NA))
-               
-               v = pindex(test, i, j)
-               grid.text(sprintf("%.3f", v), x, y, gp = gpar(fontsize = 15))
-             })
-
-draw(ht, heatmap_legend_list = list(
-  Legend(title = "Over-representation", col_fun = col1)
-))
 ```
 
 Combine two analyses in one plot
 ```{r}
 test[upper.tri(test)] <- keepForPlot[upper.tri(keepForPlot)]
-
+col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
 col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
 
 ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
@@ -495,12 +441,12 @@ ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
                grid.text(sprintf("%.3f", v), x, y, gp = gpar(fontsize = 15))
              })
 
-pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/fig3b-heatmap-combined.pdf", width=12, height=10)
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/fig3b-heatmap-combined.pdf", width=12, height=10)
 draw(ht, heatmap_legend_list = list(
   Legend(title = "Shared binding location representation", col_fun = col1),
   Legend(title = "Shared gene representation", col_fun = col2)
 ))
-dev.off()
+#dev.off()
 ```
 
 Distribution of number of TF fams per peak
