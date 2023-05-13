@@ -1,4 +1,26 @@
 library(ggplot2)
+
+#figure 3A after revision
+r <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes-Webgestal/enrichment_results_wg_result1683039055.txt", header = T, sep = "\t")
+r <- r[r$enrichmentRatio >= 1.5 & r$FDR <= 0.05 & r$overlap >= 5,]
+#write.table(r, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5-toGenes-Webgestal/goFiltered.txt", quote = F, sep = "\t", row.names = F)
+
+r <- r[r$description %in% c("cell-cell adhesion",
+                            "positive regulation of cell migration",
+                            "female pregnancy",
+                            "canonical Wnt signaling pathway",
+                            "positive regulation of JAK-STAT cascade"),]
+pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/commPeaks-GO.pdf", width = 15, height = 5)
+ggplot(data=r, aes(x=-log10(FDR), y=description,
+                   color=log2(`enrichmentRatio`), size=`overlap`)) + 
+  geom_point(show.legend = TRUE) + ylab("") + xlab("-Log10(FDR)") + scale_color_gradient(low = "#fb6a4a", high = "#a50f15") +
+  scale_size_continuous(range = c(5, 20)) +
+  theme(legend.text = element_text(size=10), legend.title = element_text(size=10),
+        axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 20)) + ggtitle("Interesting GO terms enriched with genes associated to common peaks")
+dev.off()
+
+
 #TBC.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/TBC-unfilteredDApeaks.txt", header = T)
 #names(TBC.markers)[names(TBC.markers) == "p_val_adj"] <- 'padj'
 #names(TBC.markers)[names(TBC.markers) == "avg_log2FC"] <- 'log2FoldChange'
@@ -72,4 +94,5 @@ dev.off()
 
 #figure 3b - heatmap
 #see 5_TFcombo.R
+
 

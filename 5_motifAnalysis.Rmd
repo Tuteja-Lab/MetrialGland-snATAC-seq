@@ -22,18 +22,8 @@ knitr::opts_knit$set(width = 75)
 
 This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
 
-Load libraries
-```{r}
-library(dplyr)
-library(Signac)
-library(Seurat)
-library(ggplot2)
-library(GenomicRanges)
-library(patchwork)
-set.seed(1234)
-```
 
-## Motif analysis:
+## File prep:
 We first define common peaks to regions enriched in TBC cluster at GD15.5 and GD19.5 that overlap by at least 50\%. <br>
 ```
 module load bedtools2
@@ -54,9 +44,25 @@ library(patchwork)
 set.seed(1234)
 ```
 
+Associate common peaks to genes:
+```{r}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks.bed", header=F)
+commToGenes <- ClosestFeature(rats, regions = peaks$V8, annotation = rnor6.ranges)
+write.table(commToGenes, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaksToGenes.txt", quote = F, sep = "\t", row.names = F)
+```
+
 ## Motif analysis:
 We carry out motif analysis with TF motifs from rat, mouse and human database. Firstly, run with rat TFs:
 ```{r, eval=F}
+library(JASPAR2020)
+library(TFBSTools)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
 Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
 DefaultAssay(rats) <- 'MACSpeaks'
@@ -250,6 +256,36 @@ Number of peaks that contained the retained motifs
 ```{r}
 length(unique(motifPeaks$peak))
 ```
+
+## Compare with TFAP2C data from mouse stem cells
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks
+ml bedtools2
+
+# common peaks with motifs and overlapping with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | cut -f 4 | grep -wf - commonPeaksGD19.5withFinalMotifs.txt | grep -E "MA0524.2|MA0524.2|MA0814.2" | cut -f 2 | sort -u | wc -l
+#208
+
+# common peaks with motifs
+grep -E "MA0524.2|MA0524.2|MA0814.2" commonPeaksGD19.5withFinalMotifs.txt | cut -f 2 | grep -wf - commonPeaks-gd19.5-hg38Coor.bed | sed 's/^/chr/g' | wc -l
+#439
+
+# common peaks with ChIP
+sed 's/^/chr/g' commonPeaks-gd19.5-hg38Coor.bed | bedtools intersect -a - -b extraData/GSM3019344_dTSC_Tfap2c.peak-mm10toHg38.txt -wa -u | wc -l
+#394
+
+# common peaks
+wc -l commonPeaks-gd19.5-hg38Coor.bed
+#911
+```
+
+```{r}
+dat <- data.frame(`Rat_peaks_overlapping_with_TFAP2C_ChIP-seq`=c(208,394-208), `Rat_peaks_not_overlapping_with_TFAP2C_ChIP-seq`=c(439-208,911-439-(394-208)))
+rownames(dat) <- c("Rat peaks with TFAP2C motifs", "Rat peaks without TFAP2C motifs")
+
+fisher.test(dat, alternative = "greater")
+```
+
 ## Shared genes
 First, merge families that shared any motif members:
 ```{r}

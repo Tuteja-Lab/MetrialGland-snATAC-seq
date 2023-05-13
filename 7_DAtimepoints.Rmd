@@ -1,0 +1,722 @@
+---
+title: "scATAC-seq Rat Metrial Glands"
+author: "Ha T. H. Vu"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+options(max.print = "75")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "Files/",
+  fig.width = 15,
+  prompt = FALSE,
+  tidy = FALSE,
+  message = FALSE,
+  warning = TRUE
+)
+knitr::opts_knit$set(width = 75)
+```
+
+This is a documentation for analyses of scATAC-seq data, generated from rat metrial gland tissues on gestational day (GD) 15.5 and 19.5. <br>
+
+# Merge two timepoints into one object
+Load libraries
+```{r}
+library(Seurat)
+library(Signac)
+library(Seurat)
+library(S4Vectors)
+library(GenomicRanges)
+library(patchwork)
+library(biomaRt)
+library(ggplot2)
+library(dplyr)
+set.seed(1234)
+```
+
+Load objects from each timepoint
+```{r, eval = F}
+library(parallelly)
+library(future)
+library(future.apply)
+plan("multiprocess", workers = availableCores())
+options(future.globals.maxSize = 44440 * 1024^2)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+rats15.5 <- rats
+cells_to_reid <- WhichCells(rats15.5, idents = "Invasive trophoblast cells")
+Idents(rats15.5, cells = cells_to_reid) <- "GD15.5_TBC"
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+rats19.5 <- rats
+cells_to_reid <- WhichCells(rats19.5, idents = "Invasive trophoblast cells")
+Idents(rats19.5, cells = cells_to_reid) <- "GD19.5_TBC"
+```
+
+Creating a common peak set:
+```{r, eval = F}
+intersecting.regions <- findOverlaps(query=rats15.5, subject=rats19.5)
+intersections.19.5 <- unique(queryHits(intersecting.regions))
+peaks.use <- sort(granges(rats15.5)[intersections.19.5])
+
+gd15.5_peaks_19.5 <- FeatureMatrix(fragments = Fragments(rats19.5), features = peaks.use, cells = colnames(rats19.5))
+
+rats19.5[['gd15.5Peaks']] <- CreateChromatinAssay(
+  counts = gd15.5_peaks_19.5,
+  min.cells = 1,
+  ranges = peaks.use,
+)
+
+DefaultAssay(rats19.5) <- 'gd15.5Peaks'
+rats19.5 <- RunTFIDF(rats19.5)
+
+peaknames <- GRangesToString(grange = peaks.use)
+
+counts <- GetAssayData(rats15.5, assay = "MACSpeaks", slot = "counts")
+
+rats15.5[['gd15.5Peaks']] <- CreateChromatinAssay(
+  counts = counts[peaknames, ],
+  ranges = peaks.use
+)
+
+DefaultAssay(rats15.5) <- "gd15.5Peaks"
+rats15.5 <- RunTFIDF(rats15.5)
+
+merged2tp <- merge(rats15.5, rats19.5)
+DefaultAssay(merged2tp) <- "gd15.5Peaks"
+merged2tp <- RunTFIDF(merged2tp)
+merged2tp <- FindTopFeatures(merged2tp, min.cutoff = 'q0')
+merged2tp <- RunSVD(merged2tp)
+merged2tp <- RunUMAP(merged2tp, reduction = 'lsi', dims = 2:20) #20 because I used 20 to do clustering for 15.5, while only 10 for 19.5
+
+save(merged2tp, file="/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/merged2timepoints.rda")
+```
+
+# Differential accessibility analysis between two timepoints
+```{r, eval = F}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/merged2timepoints.rda")
+rats1 <- merged2tp
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+
+DefaultAssay(rats1) <- 'MACSpeaks'
+Annotation(rats1) <- rnor6.ranges
+
+#TBC.markers <- FindMarkers(rats1, ident.1 = "GD15.5_TBC", ident.2 = "GD19.5_TBC",  test.use = "LR", latent.vars = 'peak_region_fragments')
+
+#write.table(TBC.markers, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/TBC-unfilteredDApeaks.txt", quote = F, sep = '\t')
+```
+
+Get significant regions between two timepoints
+```{r, eval = F}
+TBC.markers <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/TBC-unfilteredDApeaks.txt", header = T)
+TBC.markers <- subset(TBC.markers, TBC.markers$p_val_adj <= 0.05)
+TBC.15.5 <- subset(TBC.markers, TBC.markers$avg_log2FC >= log2(1.5))
+TBC.19.5 <- subset(TBC.markers, TBC.markers$avg_log2FC <= -log2(1.5))
+closest_genes_15.5 <- ClosestFeature(rats1, regions = rownames(TBC.15.5), annotation = rnor6.ranges)
+closest_genes_19.5 <- ClosestFeature(rats1, regions = rownames(TBC.19.5), annotation = rnor6.ranges)
+
+TBC.15.5$regions <- rownames(TBC.15.5)
+TBC.19.5$regions <- rownames(TBC.19.5)
+new15.5 <- dplyr::left_join(TBC.15.5, closest_genes_15.5, by = c("regions" = "query_region"))
+rownames(new15.5) <- new15.5$regions
+write.table(new15.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd15.5TBC.txt", quote = F, sep = '\t')
+
+new19.5 <- dplyr::left_join(TBC.19.5, closest_genes_19.5, by = c("regions" = "query_region"))
+rownames(new19.5) <- new19.5$regions
+write.table(new19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC.txt", quote = F, sep = '\t')
+```
+
+Number of differential accessible regions at each timepoint:
+```{r}
+new15.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd15.5TBC.txt", header = T)
+nrow(new15.5)
+new19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC.txt", header = T)
+nrow(new19.5)
+```
+Of note, these regions may not be TBC-specific peaks within a timepoint. We can filter them out later.   
+
+Obtain the DA peaks' coordinates. Again, hese regions may not be TBC-specific peaks within a timepoint.   
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/
+tail -n +2 gd15.5TBC.txt | cut -f 1 | sed 's/-/\t/g' | sed 's/^/chr/g' > gd15.5TBC-rat.bed
+tail -n +2 gd19.5TBC.txt | cut -f 1 | sed 's/-/\t/g' | sed 's/^/chr/g' > gd19.5TBC-rat.bed
+```
+
+Map DA peaks to the original coordinates, and keep regions that are TBC-specific at each timepoint:
+```
+module load bedtools2
+sed 's/^/chr/g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd15.5-tbc.bed | bedtools intersect -a gd15.5TBC-rat.bed -b - -wa -wb > gd15.5TBCspecific.txt
+sed 's/^/chr/g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-tbc.bed | bedtools intersect -a gd19.5TBC-rat.bed -b - -wa -wb > gd19.5TBCspecific.txt
+```
+
+The number of regions that are timepoint-specific and TBC-specific:
+```
+cut -f 4-7 gd15.5TBCspecific.txt | sort -u > gd15.5specific-TBCspecific.bed
+cut -f 4-7 gd19.5TBCspecific.txt | sort -u > gd19.5specific-TBCspecific.bed
+wc -l gd1*.5specific-TBCspecific.bed
+   51 gd15.5specific-TBCspecific.bed
+  194 gd19.5specific-TBCspecific.bed
+```
+
+How many of these are TBC-specific common peaks:
+```
+bedtools intersect -a gd15.5specific-TBCspecific.bed -b /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd15.5.bed -wa -u | wc -l
+4
+```
+```
+sed 's/^/chr/g' /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/commonPeaks-gd19.5.bed | bedtools intersect -a gd19.5specific-TBCspecific.bed -b - -wa -u | wc -l
+0
+```
+Very few peaks are in common and differentially accessible. It means that once a region is open at both timepoints, the amount of openness is also consistent, at least for trophoblast cells.
+
+# GO analysis of timepoint-specific and TBC-specific peaks
+First, use LiftOver to transfer rat coordinates (rn6) to human (hg38). Then run GREAT. GD15.5 had 34 regions converted successfully to human, and GD 19.5 had 124 regions converted successfully to human.   
+With GREAT, GD15.5 regions were not enriched for any processes. GD 19.5 were enriched for `apoptotic signaling pathway` (`adj. p-value = 3.6306e-2`) and `cytokine production` (`adj p-value = 2.5554e-2`).
+
+# Motif analysis
+Since there are few DA peaks at GD15.5, we will carry out motif enrichment analysis for DA peaks at GD19.5 only.
+We carry out motif analysis with TF motifs from rat, mouse and human database. Firstly, run with rat TFs:
+```{r, eval=F}
+library(JASPAR2020)
+library(TFBSTools)
+library(BSgenome.Rnorvegicus.Ensembl.rn6)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5specific-TBCspecific.bed", header=F)
+top.peaks <- unique(peaks$V4)
+open.peaks <- AccessiblePeaks(rats, assay = "MACSpeaks", min.cells = 1)
+rats <- RegionStats(rats[['MACSpeaks']], genome=BSgenome.Rnorvegicus.Ensembl.rn6)
+meta.feature <- GetAssayData(rats, assay = "MACSpeaks", slot = "meta.features")
+peaks.matched <- MatchRegionStats(meta.feature = meta.feature[open.peaks, ], query.feature = meta.feature[top.peaks, ], n = 50000, features.match = c("GC.percent", "sequence.length"))
+#rats
+pfm <- getMatrixSet(x = JASPAR2020, opts = list(species = "Rattus norvegicus", all_versions = FALSE))
+motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = BSgenome.Rnorvegicus.Ensembl.rn6, p.cutoff = 0.00005)
+motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
+motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
+rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
+enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
+write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-ratsMotifs.txt", quote=F)
+save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5_ATACwithRatPFM.rda")
+```
+Mouse motifs:
+```{r, eval=F}
+pfm <- getMatrixSet(x = JASPAR2020, opts = list(species = "Mus musculus", all_versions = FALSE))
+motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = BSgenome.Rnorvegicus.Ensembl.rn6, p.cutoff = 0.00005)
+motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
+motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
+rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
+enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
+write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-mouseMotifs.txt", quote=F)
+save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5_ATACwithMousePFM.rda")
+```
+Human motifs:
+```{r, eval=F}
+pfm <- getMatrixSet(x = JASPAR2020, opts = list(species = "Homo sapiens", all_versions = FALSE))
+motif.matrix <- CreateMotifMatrix(features = granges(rats), pwm = pfm, genome = BSgenome.Rnorvegicus.Ensembl.rn6, p.cutoff = 0.00005)
+motif.positions <- motifmatchr::matchMotifs(pwms = pfm, subject = granges(rats), out = 'positions', genome = BSgenome.Rnorvegicus.Ensembl.rn6)
+motif <- CreateMotifObject(data = motif.matrix, positions = motif.positions, pwm = pfm)
+rats <- SetAssayData(object = rats, slot = 'motifs', new.data = motif)
+enriched.motifs <- FindMotifs(object=rats, features=top.peaks, background=peaks.matched)
+write.table(enriched.motifs, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-humanMotifs.txt", quote=F)
+save(rats, file = "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5_ATACwithHumanPFM.rda")
+```
+
+We compile the enriched motifs to one table.
+```{r}
+rat19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-ratsMotifs.txt", header = T)
+rat19.5$adj_pval <- p.adjust(rat19.5$pvalue, "BH")
+rat19.5 <- rat19.5[rat19.5$adj_pval <= 0.05 & rat19.5$fold.enrichment >= 1.5,]
+dim(rat19.5)
+
+mouse19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-mouseMotifs.txt", header = T)
+mouse19.5$adj_pval <- p.adjust(mouse19.5$pvalue, "BH")
+mouse19.5 <- mouse19.5[mouse19.5$adj_pval <= 0.05 & mouse19.5$fold.enrichment >= 1.5,]
+mouse19.5$type <- "mouse"
+
+human19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5-humanMotifs.txt", header = T)
+human19.5$adj_pval <- p.adjust(human19.5$pvalue, "BH")
+human19.5 <- human19.5[human19.5$adj_pval <= 0.05 & human19.5$fold.enrichment >= 1.5,]
+human19.5$type <- "human"
+
+motifs19.5 <- rbind(rat19.5, mouse19.5, human19.5)
+write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5allMotifs.txt", row.names = F, sep = "\t", quote = F)
+```
+
+Number of motifs
+```{r}
+length(motifs19.5$motif)
+```
+
+Next, filter and keep only transcription factors (TFs) with enriched motifs and have expression levels > 0.5 at GD19.5.
+```{r}
+mouseOrthologs <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/rat-mouseOrthologs.txt", header = T, sep = "\t")
+mouseOrthologs <- as.data.frame(apply(mouseOrthologs, 2, toupper))
+humanOrthologs <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/rat-humanOrthologs.txt", header = T, sep = "\t")
+humanOrthologs <- as.data.frame(apply(humanOrthologs, 2, toupper))
+
+#transforming functions
+subVar2 <- function(x) {
+  ifelse(grepl("var.2", x, ignore.case = TRUE), gsub("\\(var.2\\)", "", x, ignore.case = TRUE), x)
+}
+subVar3 <- function(x) {
+  ifelse(grepl("var.3", x, ignore.case = TRUE), gsub("\\(var.3\\)", "", x, ignore.case = TRUE), x)
+}
+subColon <- function(x) {
+  ifelse(grepl("::", x, ignore.case = TRUE), strsplit(x, "::"), x)
+}
+
+enriched <- motifs19.5[, c("motif", "motif.name", "type")]
+enriched2 <- data.frame(motif=NA, motif.name=NA, type=NA, TFgenes=NA)
+for (i in 1:nrow(enriched)) {
+  if (enriched[i, "type"] == "rat") {
+    temp <- enriched[i,]
+    temp$TFgenes <- enriched[i, "motif.name"]
+    enriched2 <- rbind(enriched2, temp)
+  } else if (enriched[i, "type"] == "mouse") {
+    temp <- enriched[i,]
+    names <- sapply(enriched[i, "motif.name"], subVar2)
+    names <- sapply(names, subVar3)
+    names <- sapply(names, subColon)
+    names <- unlist(names)
+    df <- data.frame(tf=toupper(names))
+    df <- inner_join(df, mouseOrthologs[, c("Gene.name", "Gene.name.1")], by = c("tf" = "Gene.name.1"))
+    temp2 <- temp[rep(seq_len(nrow(temp)), each = length(df$Gene.name)), ]
+    temp2$TFgenes <- df$Gene.name
+    enriched2 <- rbind(enriched2, temp2)
+  } else {
+    temp <- enriched[i,]
+    names <- sapply(enriched[i, "motif.name"], subVar2)
+    names <- sapply(names, subVar3)
+    names <- sapply(names, subColon)
+    names <- unlist(names)
+    df <- data.frame(tf=toupper(names))
+    df <- inner_join(df, mouseOrthologs[, c("Gene.name", "Gene.name.1")], by = c("tf" = "Gene.name.1"))
+    temp2 <- temp[rep(seq_len(nrow(temp)), each = length(df$Gene.name)), ]
+    temp2$TFgenes <- df$Gene.name
+    enriched2 <- rbind(enriched2, temp2)
+  }
+}
+enriched2 <- enriched2[!is.na(enriched2$motif),]
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-4-5-6-7_res0.8.rda")
+exp19.5 <- AverageExpression(data2)
+exp19.5 <- as.data.frame(exp19.5$RNA)
+rownames(exp19.5) <- toupper(rownames(exp19.5))
+exp19.5$gene <- rownames(exp19.5)
+g2 <- rownames(exp19.5[rownames(exp19.5) %in% enriched2$TFgenes & exp19.5$`6` > 0.5,])
+enriched2 <- left_join(enriched2, exp19.5[,c("gene", "6")], by = c("TFgenes" = "gene"))
+enriched2[is.na(enriched2$`6`), "6"] <- 0
+enriched2 <- enriched2[enriched2$TFgenes %in% g2,]
+
+#temp <- left_join(motifs19.5, enriched2)
+#write.table(temp, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/tableS4_1.txt",  sep = "\t", quote = F, row.names = F)
+
+
+motifs19.5 <- motifs19.5[motifs19.5$motif.name %in% enriched2$motif.name,]
+#write.table(motifs19.5, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/finalMotifs-da19.5coor.txt", sep = "\t", quote = F)
+```
+
+Number of motifs retained
+```{r}
+length(motifs19.5$motif)
+```
+
+## Motifs unique to DA peaks at GD19.5
+```{r}
+common <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/finalMotifs-commonPeaksGD19.5coor.txt", header = T)
+setdiff(motifs19.5$motif.name, common$motif.name)
+intersect(motifs19.5$motif.name, common$motif.name)
+setdiff(common$motif.name, motifs19.5$motif.name)
+```
+
+## Find peaks that contain the enriched motifs of the expressed TFs.
+Since the types of the retained motifs were mouse and human, we will load the related objects only.
+```{r, eval=F}
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/2_MACS2Peaks/annotation_scRNAseq/gd19.5-ATACwithRNAlables.rda")
+Idents(rats) <- rats@meta.data$predicted.id # change from old identities to those predicted by scRNA-seq
+DefaultAssay(rats) <- 'MACSpeaks'
+Annotation(rats) <- rnor6.ranges
+peaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5specific-TBCspecific.bed", header=F)
+closest_genes <- ClosestFeature(rats, regions = peaks$V4)
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5_ATACwithMousePFM.rda")
+
+temp <- motifs19.5[motifs19.5$type == "mouse",]
+motifPeaks <- data.frame(motif=NA, peak=NA)
+for (i in 1:nrow(temp)) {
+  p <- intersect(closest_genes$query_region, names(which(GetMotifData(rats)[, temp$motif[i]] == 1)))
+  temp1 <- data.frame(motif=rep(temp$motif[i], length(p)), 
+                      peak=p)
+  motifPeaks <- rbind(motifPeaks, temp1)
+}
+
+load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5_ATACwithHumanPFM.rda")
+
+temp <- motifs19.5[motifs19.5$type == "human",]
+for (i in 1:nrow(temp)) {
+  p <- intersect(closest_genes$query_region, names(which(GetMotifData(rats)[, temp$motif[i]] == 1)))
+  temp1 <- data.frame(motif=rep(temp$motif[i], length(p)), 
+                      peak=p)
+  motifPeaks <- rbind(motifPeaks, temp1)
+}
+
+motifPeaks <- motifPeaks[!is.na(motifPeaks$motif),]
+motifPeaks$peak <- paste0("chr", motifPeaks$peak)
+motifPeaks$peak <- sub("-", ":", motifPeaks$peak)
+#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/daPeaksGD19.5withFinalMotifs.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Number of peaks that contained the retained motifs
+```{r}
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/daPeaksGD19.5withFinalMotifs.txt", header = T)
+length(unique(motifPeaks$peak))
+```
+
+# Shared genes
+First, merge families that shared any motif members:
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ComplexHeatmap)
+
+jaspar <- read.table("/work/LAS/geetu-lab/hhvu/JASPAR-library.txt", header = T, sep = "\t")
+
+###merge family
+toGenes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC.txt", header = T, sep = "\t")
+gd19.5coor <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBCspecific.txt", header = F, sep = "\t")
+gd19.5coor$V8 <- paste0(gd19.5coor$V1, "-", gd19.5coor$V2, "-", gd19.5coor$V3)
+gd19.5coor$V8 <- gsub("chr", "", gd19.5coor$V8)
+toGenes <- toGenes[toGenes$regions %in% gd19.5coor$V8,]
+
+motifPeaks <- inner_join(motifPeaks, motifs19.5[,c("motif", "motif.name")], by = c("motif" = "motif"))
+motifPeaks <- inner_join(motifPeaks, jaspar, by = c("motif" = "ID"))
+motifPeaks <- motifPeaks[order(motifPeaks$Family),]
+motifPeaks$Family2 <- motifPeaks$Family
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "Fos-related factors", "Fos-related factors, Jun-related factors",
+                             motifPeaks$Family2)
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "Jun-related factors", "Fos-related factors, Jun-related factors",
+                             motifPeaks$Family2)
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "Fos-related factors::Jun-related factors", "Fos-related factors, Jun-related factors", motifPeaks$Family2)
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "RXR-related receptors (NR2)", "Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)", motifPeaks$Family2)
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "Thyroid hormone receptor-related factors (NR1)", "Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)", motifPeaks$Family2)
+motifPeaks$Family2 <- ifelse(motifPeaks$Family2 == "Thyroid hormone receptor-related factors (NR1)::RXR-related receptors (NR2)", "Thyroid hormone receptor-related factors (NR1), RXR-related receptors (NR2)", motifPeaks$Family2)
+
+motifPeaks <- inner_join(motifPeaks, toGenes, by = c("peak" = "regions"))
+#write.table(motifPeaks, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/finalMotifs-da19.5coor-toGenes-newFamNames.txt",  sep = "\t", quote = F, row.names = F)
+```
+
+Build a data frame for testing
+```{r}
+df = data.frame(from = rep(unique(motifPeaks$Family2), times = 7),
+                to = rep(unique(motifPeaks$Family2), each = 7),
+                q = NA,
+                stringsAsFactors = FALSE)
+
+#test significance
+#number of samples
+k <- c()
+for (i in df$from) {
+  sub <- motifPeaks[motifPeaks$Family2 == i,]
+  k <- c(k, length(unique(sub$gene_name)))
+}
+df$k <- k #number of genes regulated by family A
+
+#number of successes
+m <- c()
+for (i in df$to) {
+  sub <- motifPeaks[motifPeaks$Family2 == i,]
+  m <- c(m, length(unique(sub$gene_name)))
+}
+df$m <- m #number of genes regulated by family B
+
+#number of failures
+df$n <- length(unique(toGenes$gene_name)) - df$m #number of genes without binding sites of family B
+
+#number of genes regulated by both families
+q <- c()
+for (i in unique(df$to)) {
+  for (j in unique(df$from)) {
+    sub1 <- motifPeaks[motifPeaks$Family2 == i,]
+    sub2 <- motifPeaks[motifPeaks$Family2 == j,]
+    q <- c(q, length(intersect(sub1$gene_name, sub2$gene_name)))
+  }
+}
+df$q <- q #number of genes regulated by both families
+
+df <- df[df$from != df$to,]
+sig <- phyper(df$q, df$m, df$n, df$k, lower.tail = FALSE, log.p = FALSE)
+df$upper.adj.pval <- p.adjust(sig, "BH")
+```
+
+Build data frame for plotting
+```{r}
+test <- data.frame(matrix(ncol=7, nrow=7))
+rownames(test) <- sort(unique(df$from))
+colnames(test) <- sort(unique(df$to))
+for (i in rownames(test)) {
+  for (j in colnames(test)) {
+    if (i != j) {
+      test[i, j] <- df[df$from == i & df$to == j, "upper.adj.pval"] 
+    } else {
+      test[i, j] <- NA
+    }
+  }
+}
+test <- apply(test, 1, as.numeric)
+rownames(test) <- sort(unique(df$from))
+keepForPlot <- test
+```
+
+# Shared locations
+```{r}
+dat <- data.frame(matrix(ncol = length(unique(motifPeaks$Family2)), nrow = 0))
+
+for (i in unique(motifPeaks$Family2)) {
+  sub <- motifPeaks[motifPeaks$Family2 == i,]
+  sub2 <- motifPeaks[motifPeaks$peak %in% unique(sub$peak),]
+  t <- rep(0, length(unique(motifPeaks$Family2)))
+  names(t) <- unique(motifPeaks$Family2)
+  for (j in unique(motifPeaks$Family2)) {
+    sub3 <- sub2[sub2$Family2 == j,]
+    t[j] <- length(unique(sub3$peak))
+  }
+  
+  dat <- rbind(dat, t)
+}
+rownames(dat) <- unique(motifPeaks$Family2)
+colnames(dat) <- unique(motifPeaks$Family2)
+
+dat <- as.matrix(dat)
+
+df = data.frame(from = rep(rownames(dat), times = ncol(dat)),
+                to = rep(colnames(dat), each = nrow(dat)),
+                value = as.vector(dat),
+                stringsAsFactors = FALSE)
+df2 <- df[df$from != df$to,]
+
+#test significance
+#number of samples
+k <- c()
+for (i in df2$from) {
+  sub <- motifPeaks[motifPeaks$Family2 == i,]
+  k <- c(k, length(unique(sub$peak)))
+}
+df2$k <- k #number of peaks with binding sites of family A
+
+#number of successes
+m <- c()
+for (i in df2$to) {
+  sub <- motifPeaks[motifPeaks$Family2 == i,]
+  m <- c(m, length(unique(sub$peak)))
+}
+df2$m <- m #number of peaks with binding sites of family B
+
+#number of failures
+df2$n <- 194 - df2$m #number of peaks without binding sites of family B
+
+#df2$value = number of peaks with binding sites of both families
+
+sig <- phyper(df2$value, df2$m, df2$n, df2$k, lower.tail = FALSE, log.p = FALSE)
+df2$upper.adj.pval <- p.adjust(sig, "BH")
+
+test <- data.frame(matrix(ncol=7, nrow=7))
+rownames(test) <- sort(unique(df2$from))
+colnames(test) <- sort(unique(df2$to))
+for (i in rownames(test)) {
+  for (j in colnames(test)) {
+    if (i != j) {
+      test[i, j] <- df2[df2$from == i & df2$to == j, "upper.adj.pval"] 
+    } else {
+      test[i, j] <- NA
+    }
+  }
+}
+test <- apply(test, 1, as.numeric)
+rownames(test) <- sort(unique(df2$from))
+```
+
+Combine two analyses in one plot
+```{r}
+test[upper.tri(test)] <- keepForPlot[upper.tri(keepForPlot)]
+col1 = circlize::colorRamp2(c(1, 0), c("#fcae91", "#a50f15"))
+col2 = circlize::colorRamp2(c(1, 0), c("#eff3ff", "#084594"))
+
+ht = Heatmap(test, rect_gp = gpar(type = "none"), show_heatmap_legend = FALSE,
+             cluster_rows = FALSE, cluster_columns = FALSE,
+             layer_fun = function(j, i, x, y, w, h, fill) {
+               l = i > j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = col1(pindex(test, i[l], j[l])), col = NA))
+               
+               l = i < j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = col2(pindex(test, i[l], j[l])), col = NA))
+               
+               l = i == j
+               grid.rect(x[l], y[l], w[l], h[l], 
+                         gp = gpar(fill = "grey", col = NA))
+               
+               v = pindex(test, i, j)
+               grid.text(sprintf("%.3f", v), x, y, gp = gpar(fontsize = 15))
+             })
+
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/fig3b-heatmap-combined.pdf", width=12, height=10)
+draw(ht, heatmap_legend_list = list(
+  Legend(title = "Shared binding location representation", col_fun = col1),
+  Legend(title = "Shared gene representation", col_fun = col2)
+))
+#dev.off()
+```
+
+Distribution of number of TF fams per peak
+```{r}
+test <- motifPeaks[,c("peak", "Family2")]
+test <- distinct(test)
+t <- as.data.frame(table(test$peak))
+
+#pdf("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/FIGURES/20220829_draftV3/figure3c-famPerPeak.pdf", width = 5, height = 6)
+ggplot(t, aes(x = Freq)) + geom_histogram(bins = 5, fill = "#c6dbef", color="grey") +
+  scale_x_continuous(breaks=c(0:5)) +
+  stat_bin(aes(y=..count.., label=ifelse(..count..==0,"",..count..)), geom="text", vjust=-.5) +
+  theme_bw() +
+  ggtitle("Distribution of family number per gd19.5 DA peak")
+#dev.off()
+```
+
+# Network
+## Conserved DA peak - conserved DA gene networks:
+Build list of genes that are TBC markers specific to gd19.5 that are conserved in human EVT using scRNA-seq data, and these markers are also near to the conserved DA peaks.
+```{r}
+library(dplyr)
+
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC.txt", header = T, sep = "\t")
+gd19.5coor <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBCspecific.txt", header = F, sep = "\t")
+gd19.5coor$V8 <- paste0(gd19.5coor$V1, "-", gd19.5coor$V2, "-", gd19.5coor$V3)
+gd19.5coor$V8 <- gsub("chr", "", gd19.5coor$V8)
+closest_genes <- closest_genes[closest_genes$regions %in% gd19.5coor$V8,]
+
+marker19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-TBC-DEG.txt", header = T, sep = "\t")
+markers <- intersect(rownames(marker19.5), closest_genes$gene_name)
+
+conservedRats <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/commonPeaks/conservedRat.txt", header = T, sep = "\t")
+
+markers <- markers[which(toupper(markers) %in% conservedRats$ratGenes == T)]
+
+length(markers)
+```
+```
+cd /work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks
+module load bedtools2
+sed 's/chr//g' gd19.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b ../commonPeaks/EVTpeaks.bed -wa -u > gd19.5specific-TBCspecific-hg38-inEVT.bed
+
+wc -l gd19.5specific-TBCspecific-hg38-inEVT.bed
+13 gd19.5specific-TBCspecific-hg38-inEVT.bed
+```
+
+Find peaks with enriched motifs and are also conserved
+```{r}
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/finalMotifs-da19.5coor-toGenes-newFamNames.txt", header = T, sep = "\t")
+conservedPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5specific-TBCspecific-hg38-inEVT.bed", header = F)
+motifPeaks <- motifPeaks[motifPeaks$peak %in% conservedPeaks$V4,]
+```
+
+Number of pekas with enriched motifs and are also conserved
+```{r}
+length(unique(motifPeaks$peak))
+```
+
+Associate peaks/motifs to genes
+```{r}
+network <- motifPeaks[motifPeaks$gene_name %in% closest_genes$gene_name,]
+network <- network[network$gene_name %in% markers,]
+dim(network)
+length(unique(network$gene_name))
+```
+There are no genes DE at gd19.5 AND also conserved AND also connected to the conserved peaks (via peak - gene association).
+
+## DA peak - DA gene networks:
+Build list of genes that are TBC markers specific to gd19.5using scRNA-seq data, and these markers are also near to the DA peaks.
+```{r}
+closest_genes <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBC.txt", header = T, sep = "\t")
+gd19.5coor <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/gd19.5TBCspecific.txt", header = F, sep = "\t")
+gd19.5coor$V8 <- paste0(gd19.5coor$V1, "-", gd19.5coor$V2, "-", gd19.5coor$V3)
+gd19.5coor$V8 <- gsub("chr", "", gd19.5coor$V8)
+closest_genes <- closest_genes[closest_genes$regions %in% gd19.5coor$V8,]
+
+marker19.5 <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd19.5-TBC-DEG.txt", header = T, sep = "\t")
+markers <- intersect(rownames(marker19.5), closest_genes$gene_name)
+
+length(markers)
+```
+
+Peaks with enriched motifs
+```{r}
+motifPeaks <- read.table("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/finalMotifs-da19.5coor-toGenes-newFamNames.txt", header = T, sep = "\t")
+```
+
+Number of peaks with enriched motifs
+```{r}
+length(unique(motifPeaks$peak))
+```
+
+Associate peaks/motifs to genes
+```{r}
+network <- motifPeaks[motifPeaks$gene_name %in% closest_genes$gene_name,]
+network <- network[network$gene_name %in% markers,]
+dim(network)
+length(unique(network$gene_name))
+```
+Grouping motifs of the same gene families together. Here if two families shared an element, I will also merge them together.
+```{r}
+all <- data.frame(tfGene=character(), regGene=character())
+for (i in unique(network$Family2)) {
+  tfGene <- unique(network[which(network$Family2 == i), "motif.name"])
+  tf <- toString(tfGene)
+  regGene <- unique(network[which(network$Family2 == i), "gene_name"])
+  tbl <- data.frame(matrix(nrow = length(tfGene)*length(regGene), ncol = 2))
+  for (j in 1:length(tfGene)) {
+    tbl[((j-1)*length(regGene)+1):(j*length(regGene)),1] <- tf
+    tbl[((j-1)*length(regGene)+1):(j*length(regGene)),2] <- as.character(regGene)
+  }
+  all <- rbind(all, tbl)
+}
+all$X2 <- toupper(all$X2)
+all <- dplyr::distinct(all)
+
+g <- unique(all$X2)
+for (k in 1:length(g)) {
+  if (length(grep(g[k], all$X1, ignore.case = T)) != 0) {
+    all[which(g[k] == all$X2), "X2"] <- all[grep(g[k], all$X1, ignore.case = T)[1], "X1"]
+  }
+}
+all <- dplyr::distinct(all)
+
+write.table(all, "/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/daPeaksGenes-gd19.5.txt", sep = "\t", row.names = F, quote = F)
+```
+
+Build network in Cytoscape.
+```{r}
+knitr::include_graphics("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/5_integrating2timepoints/annotation_scRNAseq/daPeaks/network.PNG")
+```
+
+Genes with most associated motifs:
+```{r}
+sort(table(all$X2))[(length(table(all$X2))-5):length(table(all$X2))]
+```
+
+TFs with most genes:
+```{r}
+sort(table(all$X1))[(length(table(all$X1))-3):length(table(all$X1))]
+```
