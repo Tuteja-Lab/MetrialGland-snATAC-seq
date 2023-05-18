@@ -31,27 +31,24 @@ bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa -u > c
 Check overlapping between common conserved ATAC with H3k27ac peaks in EVT
 ```
 bedtools intersect -a commonPeaks-gd19.5-hg38Coor-inEVT.bed -b /work/LAS/geetu-lab/hhvu/varberg.et.al/ChIP_TS-CT1-EVT-K27ac_peaks/ChIP_TS-CT1-EVT-K27ac_peaks.narrowPeak -wa -wb > commonPeaks-gd19.5-hg38Coor-inAtacH3k27acEVT-Varberg.bed
-bedtools intersect -a commonPeaks-gd19.5-hg38Coor-inEVT.bed -b /work/LAS/geetu-lab/hhvu/Frost.et.al/GSE200761_EVT_CutTag_H3K27ac_peaks.bed -wa -wb > commonPeaks-gd19.5-hg38Coor-inAtacH3k27acEVT-Frost.bed
 ```
 
 ```{r}
-dat <- data.frame(`Rat_peaks_overlapping_with_H3k27ac_ChIP-seq`=c(104,264-104), `Rat_peaks_not_overlapping_with_H3k27ac_ChIP-seq`=c(24,623))
-rownames(dat) <- c("Rat peaks with H3k27ac", "Rat peaks without H3k27ac")
-fisher.test(dat, alternative = "greater")
-
-dat <- data.frame(`Rat_peaks_overlapping_with_H3k27ac_ChIP-seq`=c(64,264-64), `Rat_peaks_not_overlapping_with_H3k27ac_ChIP-seq`=c(8, 647-8))
+dat <- data.frame(`RatPeaksWithATAC`=c(104,264-104), `RatPeaksWithoutATAC`=c(24,623))
 rownames(dat) <- c("Rat peaks with H3k27ac", "Rat peaks without H3k27ac")
 fisher.test(dat, alternative = "greater")
 ```
 
 DA peaks have very low rate of conservation
 ```
+sed 's/chr//g' ../daPeaks/gd15.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u | wc -l          #11
 sed 's/chr//g' ../daPeaks/gd19.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u | wc -l          # 13
 ```
 
 Test to see if common peaks have higher proportion of conserved peaks
 ```{r}
-prop.test(c(264, 13), c(911, 124), p = NULL, alternative = "greater")
+prop.test(c(264, 11), c(911, 33), p = NULL, alternative = "two.sided") #gd15.5
+prop.test(c(264, 13), c(911, 124), p = NULL, alternative = "greater") #gd19.5
 ```
 
 ## Conserved common peak - conserved common gene networks:
