@@ -362,9 +362,8 @@ pre code {
 The take overlapping regions with EVT ATAC-seq</p>
 <pre><code>bedtools intersect -a commonPeaks-gd19.5-hg38Coor.bed -b EVTpeaks.bed -wa -u &gt; commonPeaks-gd19.5-hg38Coor-inEVT.bed</code></pre>
 <p>Check overlapping between common conserved ATAC with H3k27ac peaks in EVT</p>
-<pre><code>bedtools intersect -a commonPeaks-gd19.5-hg38Coor-inEVT.bed -b /work/LAS/geetu-lab/hhvu/varberg.et.al/ChIP_TS-CT1-EVT-K27ac_peaks/ChIP_TS-CT1-EVT-K27ac_peaks.narrowPeak -wa -wb &gt; commonPeaks-gd19.5-hg38Coor-inAtacH3k27acEVT-Varberg.bed
-bedtools intersect -a commonPeaks-gd19.5-hg38Coor-inEVT.bed -b /work/LAS/geetu-lab/hhvu/Frost.et.al/GSE200761_EVT_CutTag_H3K27ac_peaks.bed -wa -wb &gt; commonPeaks-gd19.5-hg38Coor-inAtacH3k27acEVT-Frost.bed</code></pre>
-<pre class="r"><code>dat &lt;- data.frame(`Rat_peaks_overlapping_with_H3k27ac_ChIP-seq`=c(104,264-104), `Rat_peaks_not_overlapping_with_H3k27ac_ChIP-seq`=c(24,623))
+<pre><code>bedtools intersect -a commonPeaks-gd19.5-hg38Coor-inEVT.bed -b /work/LAS/geetu-lab/hhvu/varberg.et.al/ChIP_TS-CT1-EVT-K27ac_peaks/ChIP_TS-CT1-EVT-K27ac_peaks.narrowPeak -wa -wb &gt; commonPeaks-gd19.5-hg38Coor-inAtacH3k27acEVT-Varberg.bed</code></pre>
+<pre class="r"><code>dat &lt;- data.frame(`RatPeaksWithATAC`=c(104,264-104), `RatPeaksWithoutATAC`=c(24,623))
 rownames(dat) &lt;- c(&quot;Rat peaks with H3k27ac&quot;, &quot;Rat peaks without H3k27ac&quot;)
 fisher.test(dat, alternative = &quot;greater&quot;)
 #&gt; 
@@ -377,26 +376,24 @@ fisher.test(dat, alternative = &quot;greater&quot;)
 #&gt;  11.06259      Inf
 #&gt; sample estimates:
 #&gt; odds ratio 
-#&gt;   16.81038
-
-dat &lt;- data.frame(`Rat_peaks_overlapping_with_H3k27ac_ChIP-seq`=c(64,264-64), `Rat_peaks_not_overlapping_with_H3k27ac_ChIP-seq`=c(8, 647-8))
-rownames(dat) &lt;- c(&quot;Rat peaks with H3k27ac&quot;, &quot;Rat peaks without H3k27ac&quot;)
-fisher.test(dat, alternative = &quot;greater&quot;)
-#&gt; 
-#&gt;  Fisher&#39;s Exact Test for Count Data
-#&gt; 
-#&gt; data:  dat
-#&gt; p-value &lt; 2.2e-16
-#&gt; alternative hypothesis: true odds ratio is greater than 1
-#&gt; 95 percent confidence interval:
-#&gt;  13.18021      Inf
-#&gt; sample estimates:
-#&gt; odds ratio 
-#&gt;   25.46663</code></pre>
+#&gt;   16.81038</code></pre>
 <p>DA peaks have very low rate of conservation</p>
-<pre><code>sed &#39;s/chr//g&#39; ../daPeaks/gd19.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u | wc -l          # 13</code></pre>
+<pre><code>sed &#39;s/chr//g&#39; ../daPeaks/gd15.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u | wc -l          #11
+sed &#39;s/chr//g&#39; ../daPeaks/gd19.5specific-TBCspecific-hg38.bed | bedtools intersect -a - -b EVTpeaks.bed -wa -u | wc -l          # 13</code></pre>
 <p>Test to see if common peaks have higher proportion of conserved peaks</p>
-<pre class="r"><code>prop.test(c(264, 13), c(911, 124), p = NULL, alternative = &quot;greater&quot;)
+<pre class="r"><code>prop.test(c(264, 11), c(911, 33), p = NULL, alternative = &quot;two.sided&quot;) #gd15.5
+#&gt; 
+#&gt;  2-sample test for equality of proportions with continuity correction
+#&gt; 
+#&gt; data:  c(264, 11) out of c(911, 33)
+#&gt; X-squared = 0.11957, df = 1, p-value = 0.7295
+#&gt; alternative hypothesis: two.sided
+#&gt; 95 percent confidence interval:
+#&gt;  -0.2227545  0.1356708
+#&gt; sample estimates:
+#&gt;    prop 1    prop 2 
+#&gt; 0.2897914 0.3333333
+prop.test(c(264, 13), c(911, 124), p = NULL, alternative = &quot;greater&quot;) #gd19.5
 #&gt; 
 #&gt;  2-sample test for equality of proportions with continuity correction
 #&gt; 
