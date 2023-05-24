@@ -46,6 +46,8 @@ rnor6.ranges <- makeGRangesFromDataFrame(rnor6, seqnames.field = "chromosome_nam
                                          end.field = "end_position",
                                          strand.field = "strand",
                                          keep.extra.columns = TRUE)
+#save(rnor6.ranges, "/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.ranges.rda")
+
 tss.ranges <- resize(rnor6.ranges, width = 2, fix = "start")
 tss.ranges <- keepStandardChromosomes(tss.ranges, pruning.mode = 'coarse')
 
