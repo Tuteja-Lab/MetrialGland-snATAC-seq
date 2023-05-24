@@ -33,11 +33,6 @@ set.seed(1234)
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/rnor6.rda")
 colnames(rnor6)[1] <- "gene_id"
-rnor6.ranges <- makeGRangesFromDataFrame(rnor6, seqnames.field = "chromosome_name",
-                                         start.field = "start_position",
-                                         end.field = "end_position",
-                                         strand.field = "strand",
-                                         keep.extra.columns = TRUE)
 
 load("/work/LAS/geetu-lab/hhvu/project3_scATAC/scATAC-seq-analysis/4_RNAintegration/scRNA-seqFiles/gd15.5_res0.8.rda")
 data <- RenameIdents(data, `0` = "Other cells", `1` = "Other cells",
